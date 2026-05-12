@@ -1,0 +1,32 @@
+import { change } from '../db_script';
+
+change(async (db) => {
+
+  await db.changeTable('teams_app', (t) => ({
+    defaultForUserId: t.add(t.uuid().foreignKey('users', 'id', {
+      onUpdate: 'RESTRICT',
+      onDelete: 'CASCADE',
+    }).nullable()),
+  }));
+
+  await db.changeTable('users', (t) => ({
+    phoneNumber: t.add(t.string().nullable().unique()),
+    phoneNumberVerified: t.add(t.boolean().default(false)),
+    defaultTeamAppId: t.add(t.string(26).foreignKey('teams_app', 'id', {
+      onUpdate: 'RESTRICT',
+      onDelete: 'RESTRICT',
+    }).nullable()),
+    email: t.change(t.varchar(255), t.string().nullable()),
+  }));
+});
+
+change(async (db) => {
+  await db.changeTable('team_members', (t) => ({
+    phoneNumber: t.add(t.string().nullable()),
+  }));
+
+  await db.changeTable('offline_errors', (t) => ({
+    createdAt: t.change(t.timestamp().default(t.sql`now()`), t.timestamp().default(t.sql`clock_timestamp() AT TIME ZONE 'UTC'`)),
+    updatedAt: t.change(t.timestamp().default(t.sql`now()`), t.timestamp().default(t.sql`clock_timestamp() AT TIME ZONE 'UTC'`)),
+  }));
+});

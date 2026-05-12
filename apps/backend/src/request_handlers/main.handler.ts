@@ -1,7 +1,7 @@
 import { betterAuthHandler } from '@backend/request_handlers/better_auth.handler';
 import { cronJobsHandler } from '@backend/request_handlers/cron_jobs.handler';
 import { openApiHandler } from '@backend/request_handlers/open_api.handler';
-import { userAppHandler } from '@backend/request_handlers/user_app.handler';
+import { reactAppHandler as reactAppHandler } from '@backend/request_handlers/user_app.handler';
 import type { NodeHttpRequest, NodeHttpResponse } from '@orpc/standard-server-node';
 import { decrementActiveRequests, getServerHealth, incrementActiveRequests } from '@backend/utils/graceful_shutdown.utils';
 import { logger } from '@backend/utils/logger.utils';
@@ -81,12 +81,12 @@ export async function mainRequestDispatcher(
     if (cronResult.matched) return;
 
     // 8. oRPC User App Routes (/user-app/*)
-    const userAppResult = await userAppHandler.handle(req, res, {
+    const reactAppResult = await reactAppHandler.handle(req, res, {
       context: {},
       prefix: '/user-app',
     });
 
-    if (!userAppResult.matched) {
+    if (!reactAppResult.matched) {
       if (!res.writableEnded) {
         res.statusCode = 404;
         res.end('No procedure matched');

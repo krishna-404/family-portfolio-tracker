@@ -31,7 +31,7 @@ const healthCheck = rpcPublicProcedure
 		}
 	})
 		
-export const userAppRouter = {
+export const ReactAppRouter = {
 	health: healthCheck,
 	users: usersRouter,
 	journalEntries: journalEntriesRouter,
@@ -43,6 +43,6 @@ export const userAppRouter = {
 	offlineErrors: offlineErrorsRouter,
 };
 
-export type UserAppRouter = RouterClient<typeof userAppRouter>;
-export type UserAppRouterInputs = InferRouterInputs<typeof userAppRouter>
-export type UserAppRouterOutputs = InferRouterOutputs<typeof userAppRouter>;
+export type ReactAppRouter = RouterClient<typeof ReactAppRouter>;
+export type ReactAppRouterInputs = InferRouterInputs<typeof ReactAppRouter>
+export type ReactAppRouterOutputs = InferRouterOutputs<typeof ReactAppRouter>;

@@ -54,12 +54,14 @@ export const LoginPage = () => {
 			if(isTest){
 				const dummyUser = userCreateFixture();
 				const password = env.VITE_TEST_PASSWORD;
+				const email = dummyUser.email ?? "test@example.com";
 				if(!password){
 					throw new Error("Test password is not set in environment variables");
 				}
 
 				await authClient.signUp.email({
 					...dummyUser,
+					email,
 					image: dummyUser.image ?? undefined,
 					password,
 					callbackURL,
@@ -69,7 +71,7 @@ export const LoginPage = () => {
 				});
 
 				data = await authClient.signIn.email({
-					email: dummyUser.email,
+					email,
 					password,
 					rememberMe: true,
 					callbackURL,

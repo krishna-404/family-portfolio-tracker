@@ -7,7 +7,7 @@ import { themeSettingZod } from "@connected-repo/zod-schemas/enums.zod";
 import { uniqueTimeArrayZod, zTimezone } from "@connected-repo/zod-schemas/zod_utils";
 import { betterAuth } from "better-auth";
 import { createAuthMiddleware } from "better-auth/api";
-import { bearer } from "better-auth/plugins";
+import { bearer, phoneNumber } from "better-auth/plugins";
 import { apple } from "better-auth/social-providers";
 import { orchidAdapter } from "./orchid-adapter/factory.orchid_adapter";
 import { generateAppleClientSecret } from "./lib/apple.lib";
@@ -62,7 +62,19 @@ export const auth = betterAuth({
 	emailAndPassword: {
 		enabled: true,
 	},
-	plugins: [bearer()],
+	plugins: [
+		bearer(),
+		phoneNumber({
+			sendOTP: async ({ phoneNumber, code }, ctx) => {
+				logger.info({ phoneNumber, code }, "Sending phone number OTP");
+				// TODO: Implement actual SMS provider here
+			},
+			signUpOnVerification: {
+				getTempEmail: (phoneNumber) => `${phoneNumber}@temp-local.com`,
+				getTempName: (phoneNumber) => phoneNumber,
+			}
+		})
+	],
 	hooks: {
 		before: createAuthMiddleware(async (ctx) => {
 			const appleClientSecret = await appleClientSecretFn;

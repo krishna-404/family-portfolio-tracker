@@ -15,6 +15,10 @@ export class TeamAppTable extends BaseTable {
       onDelete: "CASCADE",
       onUpdate: "RESTRICT",
     }),
+    defaultForUserId: t.uuid().foreignKey("users", "id", {
+      onDelete: "CASCADE",
+      onUpdate: "RESTRICT",
+    }).nullable(),
     deletedAt: t.timestampNumber().nullable(),
 
     ...t.timestamps(),

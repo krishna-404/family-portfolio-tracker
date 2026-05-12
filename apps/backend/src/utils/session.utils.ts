@@ -58,6 +58,8 @@ const transformUserData = (rawUser: BetterAuthSession["user"]): UserSelectAll =>
 		themeSetting: rawUser.themeSetting as "dark" | "light" | "system",
 		timezone: rawUser.timezone,
 		journalReminderTimes: rawUser.journalReminderTimes,
+		phoneNumber: rawUser.phoneNumber ?? null,
+		phoneNumberVerified: rawUser.phoneNumberVerified ?? false,
 		createdAt: new Date(rawUser.createdAt).getTime(),
 		updatedAt: new Date(rawUser.updatedAt).getTime(),
 	};

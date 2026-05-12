@@ -46,6 +46,7 @@ export const teamAppMemberMandatoryZod = z.object({
 export const teamAppMemberOptionalZod = z.object({
   userId: z.uuid().nullable(),
   email: zString.nullable(),
+  phoneNumber: zString.nullable(),
   joinedAt: zTimeEpoch.nullable(),
   deletedAt: zTimeEpoch.nullable(),
 });

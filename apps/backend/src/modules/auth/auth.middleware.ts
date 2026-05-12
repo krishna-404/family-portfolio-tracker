@@ -30,7 +30,8 @@ export const rpcAuthMiddleware = async ({
 	// Set user context in Sentry for this request
 	Sentry.setUser({
 		id: user.id,
-		email: user.email,
+		email: user.email ?? undefined,
+		phoneNumber: user.phoneNumber ?? undefined,
 		username: user.name,
 	});
 

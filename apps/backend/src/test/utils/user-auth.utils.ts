@@ -37,9 +37,11 @@ const userLogin = async (loginCredentials: UserLoginCredentials ) => {
 export const createUserAndLogin = async (userInput: Partial<UserCreateInput> = {}) => {
   const password = "password123"
   const fixture = userCreateFixture(userInput);
+  const email = fixture.email ?? "test@example.com";
   const { user } = await auth.api.signUpEmail({
     body: {
       ...fixture,
+      email,
       password,
       image: fixture.image ?? undefined,
       journalReminderTimes: ["08:00", "21:00"]
@@ -47,6 +49,7 @@ export const createUserAndLogin = async (userInput: Partial<UserCreateInput> = {
   });
 
   // 2. Sign in to get the session headers
+  if (!user.email) throw new Error("Email is required for login in tests");
   return userLogin({
     email: user.email,
     password

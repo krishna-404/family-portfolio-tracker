@@ -10,13 +10,19 @@ export class UserTable extends BaseTable {
 
 	columns = this.setColumns((t) => ({
 		id: t.uuid().primaryKey().default(t.sql`gen_random_uuid()`),
-		email: t.string().unique(),
+		email: t.string().unique().nullable(),
 		emailVerified: t.boolean().default(false),
+		phoneNumber: t.string().unique().nullable(),
+		phoneNumberVerified: t.boolean().default(false),
 		name: t.string(),
 		image: t.string().nullable(),
 		timezone: t.string().default("Etc/UTC"),
 		themeSetting: t.themeSettingEnum(),
 		journalReminderTimes: t.array(t.string()).default([]),
+		defaultTeamAppId: t.ulid().foreignKey("teams_app", "id", {
+			onDelete: "RESTRICT",
+			onUpdate: "RESTRICT",
+		}).nullable(),
 		...t.timestamps(),
 	}));
 
@@ -28,7 +34,7 @@ export class UserTable extends BaseTable {
 	}
 
 	init() {
-		this.afterCreate(["email", "id", "name"], async (users, queryCtx) => {
+		this.afterCreate(["email", "emailVerified", "id", "name"], async (users, queryCtx) => {
 			// Publish the user.created event for each new user (with Orchid query context)
 			await Promise.all(
 				users.map(async (user) => {
@@ -40,16 +46,18 @@ export class UserTable extends BaseTable {
 							joinedAt: Date.now(),
 						});
 
-					// 2. Publish event
-					const eventData = {
-						userId: user.id,
-						email: user.email,
-						name: user.name,
-					};
-					return tbus.publish(
-						userCreatedEventDef.from(eventData),
-						{ query: orchidToTbusQueryAdapter(queryCtx) }
-					);
+					if (user.email && user.emailVerified){
+						// 2. Publish event
+						const eventData = {
+							userId: user.id,
+							email: user.email,
+							name: user.name,
+						};
+						return tbus.publish(
+							userCreatedEventDef.from(eventData),
+							{ query: orchidToTbusQueryAdapter(queryCtx) }
+						);
+					}
 				})
 			);
 		});

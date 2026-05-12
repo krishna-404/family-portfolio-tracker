@@ -42,6 +42,7 @@ export class TeamMemberTable extends BaseTable {
         onDelete: "SET NULL",
     }).nullable(),
     email: t.string().nullable(),
+    phoneNumber: t.string().nullable(),
     role: t.teamMemberRoleEnum(),
     addedAt: t.timestampNumber().default(t.sql`NOW()`),
     joinedAt: t.timestampNumber().nullable(),

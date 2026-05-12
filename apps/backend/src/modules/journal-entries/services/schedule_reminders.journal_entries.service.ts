@@ -35,16 +35,17 @@ export const scheduleJournalEntryReminders = async (): Promise<void> => {
 
 		// Schedule pg-tbus tasks for each user
 		await Promise.all(
-			usersToNotify.map((user) =>
-				tbus.send(
+			usersToNotify.map((user) => {
+				if (!user.email) return Promise.resolve();
+				return tbus.send(
 					userReminderTaskDef.from({
 						userId: user.id,
 						email: user.email,
 						name: user.name,
 						reminderTime: user.reminderTime,
 					})
-				)
-			)
+				);
+			})
 		);
 
 		logger.info(
