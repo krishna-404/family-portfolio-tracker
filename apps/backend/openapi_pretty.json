@@ -22,23 +22,15 @@
         "in": "cookie",
         "name": "__Secure-better-auth.session_token",
         "description": "Better Auth session cookie used by user-authenticated routes."
-      },
-      "x-team-id": {
-        "type": "apiKey",
-        "in": "header",
-        "name": "x-team-id",
-        "description": "Team ID for authentication"
       }
     }
   },
   "security": [
     {
-      "bearerAuth": [],
-      "x-team-id": []
+      "bearerAuth": []
     },
     {
-      "sessionCookie": [],
-      "x-team-id": []
+      "sessionCookie": []
     }
   ],
   "openapi": "3.1.1",
@@ -1470,6 +1462,553 @@
         }
       }
     },
+    "/files/syncDelta": {
+      "post": {
+        "operationId": "files.syncDelta",
+        "tags": [
+          "Files"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "teamId": {
+                    "type": "string",
+                    "pattern": "^[0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{26}$"
+                  },
+                  "syncedTable": {
+                    "const": "files"
+                  },
+                  "fromCursorId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "fromCursorUpdatedAt": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "toCursorId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "toCursorUpdatedAt": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "syncedAt": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "totalRecords": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "teamId",
+                  "syncedTable",
+                  "fromCursorId",
+                  "fromCursorUpdatedAt",
+                  "toCursorId",
+                  "toCursorUpdatedAt",
+                  "syncedAt",
+                  "totalRecords"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{26}$"
+                          },
+                          "tableName": {
+                            "enum": [
+                              "journalEntries"
+                            ]
+                          },
+                          "tableId": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "pattern": "^[0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{26}$"
+                              },
+                              {
+                                "type": "string",
+                                "format": "uuid"
+                              }
+                            ]
+                          },
+                          "type": {
+                            "enum": [
+                              "attachment"
+                            ]
+                          },
+                          "fileName": {
+                            "type": "string"
+                          },
+                          "mimeType": {
+                            "type": "string"
+                          },
+                          "createdByUserId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "cdnUrl": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "uri"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "thumbnailCdnUrl": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "uri"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "teamId": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "pattern": "^[0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{26}$"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "deletedAt": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "isMainFileLost": {
+                            "type": "boolean",
+                            "default": false
+                          },
+                          "createdAt": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "updatedAt": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "tableName",
+                          "tableId",
+                          "type",
+                          "fileName",
+                          "mimeType",
+                          "createdByUserId",
+                          "cdnUrl",
+                          "thumbnailCdnUrl",
+                          "teamId",
+                          "deletedAt",
+                          "createdAt",
+                          "updatedAt"
+                        ]
+                      }
+                    },
+                    "syncMetadata": {
+                      "type": "object",
+                      "properties": {
+                        "teamId": {
+                          "type": "string",
+                          "pattern": "^[0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{26}$"
+                        },
+                        "syncedTable": {
+                          "const": "files"
+                        },
+                        "fromCursorId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "fromCursorUpdatedAt": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "toCursorId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "toCursorUpdatedAt": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "syncedAt": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "totalRecords": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "teamId",
+                        "syncedTable",
+                        "fromCursorId",
+                        "fromCursorUpdatedAt",
+                        "toCursorId",
+                        "toCursorUpdatedAt",
+                        "syncedAt",
+                        "totalRecords"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "syncMetadata"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "422",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "defined": {
+                          "const": true
+                        },
+                        "code": {
+                          "const": "INPUT_VALIDATION_FAILED"
+                        },
+                        "status": {
+                          "const": 422
+                        },
+                        "message": {
+                          "type": "string",
+                          "default": "INPUT_VALIDATION_FAILED"
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "formErrors": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "fieldErrors": {
+                              "type": "object",
+                              "propertyNames": {
+                                "type": "string"
+                              },
+                              "additionalProperties": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          },
+                          "required": [
+                            "formErrors",
+                            "fieldErrors"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "defined",
+                        "code",
+                        "status",
+                        "message",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "defined": {
+                          "const": false
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "number"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "data": {}
+                      },
+                      "required": [
+                        "defined",
+                        "code",
+                        "status",
+                        "message"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "429",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "defined": {
+                          "const": true
+                        },
+                        "code": {
+                          "const": "RATE_LIMITED"
+                        },
+                        "status": {
+                          "const": 429
+                        },
+                        "message": {
+                          "type": "string",
+                          "default": "RATE_LIMITED"
+                        },
+                        "data": {}
+                      },
+                      "required": [
+                        "defined",
+                        "code",
+                        "status",
+                        "message"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "defined": {
+                          "const": false
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "number"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "data": {}
+                      },
+                      "required": [
+                        "defined",
+                        "code",
+                        "status",
+                        "message"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "500",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "defined": {
+                          "const": true
+                        },
+                        "code": {
+                          "const": "OUTPUT_VALIDATION_FAILED"
+                        },
+                        "status": {
+                          "const": 500
+                        },
+                        "message": {
+                          "type": "string",
+                          "default": "OUTPUT_VALIDATION_FAILED"
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "formErrors": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "fieldErrors": {
+                              "type": "object",
+                              "propertyNames": {
+                                "type": "string"
+                              },
+                              "additionalProperties": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          },
+                          "required": [
+                            "formErrors",
+                            "fieldErrors"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "defined",
+                        "code",
+                        "status",
+                        "message",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "defined": {
+                          "const": false
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "number"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "data": {}
+                      },
+                      "required": [
+                        "defined",
+                        "code",
+                        "status",
+                        "message"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "operationId": "health",
@@ -1907,7 +2446,7 @@
                               }
                             ]
                           },
-                          "defaultTeamAppId": {
+                          "activeTeamAppId": {
                             "anyOf": [
                               {
                                 "type": "string"
@@ -1944,7 +2483,7 @@
                           "email",
                           "phoneNumber",
                           "image",
-                          "defaultTeamAppId",
+                          "activeTeamAppId",
                           "createdAt",
                           "updatedAt",
                           "id",
@@ -3531,7 +4070,7 @@
                               }
                             ]
                           },
-                          "defaultTeamAppId": {
+                          "activeTeamAppId": {
                             "anyOf": [
                               {
                                 "type": "string"
@@ -3568,7 +4107,7 @@
                           "email",
                           "phoneNumber",
                           "image",
-                          "defaultTeamAppId",
+                          "activeTeamAppId",
                           "createdAt",
                           "updatedAt",
                           "id",
@@ -4505,7 +5044,7 @@
                         }
                       ]
                     },
-                    "defaultTeamAppId": {
+                    "activeTeamAppId": {
                       "anyOf": [
                         {
                           "type": "string"
@@ -4615,7 +5154,7 @@
                     "email",
                     "phoneNumber",
                     "image",
-                    "defaultTeamAppId",
+                    "activeTeamAppId",
                     "createdAt",
                     "updatedAt",
                     "id",
