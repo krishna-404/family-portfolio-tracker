@@ -1,9 +1,33 @@
 import { db } from "@backend/db/db";
 import type { OpenApiContextWithHeaders } from "@backend/procedures/open_api_public.procedure";
-import { verifyApiKey } from "@backend/utils/apiKeyGenerator.utils";
+import {
+	generateApiKey,
+	hashApiKey,
+	verifyApiKey,
+} from "@backend/utils/apiKeyGenerator.utils";
 import { omitKeys } from "@backend/utils/omit.utils";
 import type { MiddlewareNextFn } from "@orpc/server";
 import { ORPCError } from "@orpc/server";
+
+/**
+ * Lazily-initialized dummy hash used to keep timing constant when the
+ * requested team id does not exist (or the DB lookup fails). We run
+ * verifyApiKey against this hash so the total wall-clock time for a
+ * "missing team" request matches the wall-clock time for a "valid team,
+ * wrong key" request. This closes the enumeration side-channel that
+ * would otherwise reveal whether a `teamApiId` exists.
+ *
+ * Generated at first use via `hashApiKey` so the format stays in sync
+ * with the real generator (currently `salt:scrypt-derived-key`, both
+ * hex-encoded) without requiring top-level await.
+ */
+let dummyHashPromise: Promise<string> | null = null;
+const getDummyHash = (): Promise<string> => {
+	if (!dummyHashPromise) {
+		dummyHashPromise = hashApiKey(generateApiKey());
+	}
+	return dummyHashPromise;
+};
 
 /**
  * API Key Authentication Middleware
@@ -38,9 +62,37 @@ export const apiKeyAuthMiddleware = async ({
 	}
 
 	try {
-		const teamApiFromDb = await db.teamsApi
-			.find(teamApiId)
-			.select("*", "apiSecretHash");
+		// Use takeOptional so a missing teamApiId returns undefined instead
+		// of throwing synchronously. Throwing early on "not found" would let
+		// an attacker distinguish "team exists" from "team missing" via
+		// response time (the exists path pays for a full scrypt verify).
+		const lookup = () =>
+			db.teamsApi
+				.where({ teamApiId })
+				.select("*", "apiSecretHash")
+				.takeOptional();
+		type TeamApiRow = NonNullable<Awaited<ReturnType<typeof lookup>>>;
+
+		let teamApiFromDb: TeamApiRow | undefined;
+		try {
+			teamApiFromDb = (await lookup()) ?? undefined;
+		} catch {
+			// Treat any lookup failure as "not found" for timing purposes;
+			// we still run the dummy verify below before rejecting.
+			teamApiFromDb = undefined;
+		}
+
+		if (!teamApiFromDb) {
+			// Run a dummy verify so the response time for a missing team
+			// matches the response time for a valid team + wrong key.
+			// Discard the result and reject with the same generic error.
+			const dummyHash = await getDummyHash();
+			await verifyApiKey(apiKey, dummyHash);
+			throw new ORPCError("UNAUTHORIZED", {
+				status: 401,
+				message: "API key authentication failed",
+			});
+		}
 
 		const isValid = await verifyApiKey(apiKey, teamApiFromDb.apiSecretHash);
 

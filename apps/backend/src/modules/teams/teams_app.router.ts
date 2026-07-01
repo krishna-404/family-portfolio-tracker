@@ -5,7 +5,7 @@ import {
 	rpcTeamOwnerAdminProcedure,
 } from "@backend/procedures/protected.procedure";
 import {
-	teamAppCreateInputZod,
+	teamAppCreateApiInputZod,
 	teamAppMemberAddInputZod,
 	teamAppMemberRoleZod,
 	teamAppMemberSelectAllZod,
@@ -66,11 +66,15 @@ const getMyTeams = rpcProtectedProcedure
 
 const createTeam = rpcProtectedProcedure
 	.route({ method: "POST", tags: ["Teams"] })
-	.input(teamAppCreateInputZod)
+	.input(teamAppCreateApiInputZod)
 	.output(teamAppSelectAllZod)
 	.handler(async ({ input, context: { user } }) => {
 		const userId = user.id;
 
+		// `createTeamService` forces `createdByUserId = userId` and
+		// `personalTeamForUserId = null` for client-driven creates. Personal-team
+		// provisioning is exclusively a server-only path (`getDefaultTeam` /
+		// `UserTable.afterCreate`).
 		return await createTeamService(userId, user.email, user.phoneNumber, input);
 	});
 
@@ -234,10 +238,8 @@ const getDefaultTeam = rpcProtectedProcedure
 				userId,
 				user.email,
 				user.phoneNumber,
-				{
-					name: teamName,
-					personalTeamForUserId: userId,
-				},
+				{ name: teamName },
+				{ personalTeamForUserId: userId },
 			);
 		}
 

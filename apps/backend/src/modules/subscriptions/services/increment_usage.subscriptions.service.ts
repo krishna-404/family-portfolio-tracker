@@ -51,12 +51,23 @@ const checkAndScheduleWebhookAt90Percent = async (
 		// Schedule pg-tbus task
 		// Note: This is intentionally outside the DB transaction to avoid blocking.
 		// If scheduling fails, pg-tbus will retry. The notification flag prevents duplicate alerts.
+		//
+		// `singletonKey` is scoped per subscription so that two concurrent increments
+		// that both cross the 90% threshold cannot enqueue duplicate webhook tasks —
+		// pg-tbus enforces uniqueness of active tasks per singletonKey. This closes
+		// the race window between reading `notifiedAt90PercentUse === null` and the
+		// WHERE-guarded UPDATE below.
 		await tbus.send(
-			subscriptionAlertWebhookTaskDef.from({
-				subscriptionId: subscription.subscriptionId,
-				teamApiId: subscription.teamApiId,
-				payload,
-			}),
+			subscriptionAlertWebhookTaskDef.from(
+				{
+					subscriptionId: subscription.subscriptionId,
+					teamApiId: subscription.teamApiId,
+					payload,
+				},
+				{
+					singletonKey: `subscription.alert_webhook:${subscription.subscriptionId}`,
+				},
+			),
 		);
 
 		// Mark subscription as notified
@@ -71,24 +82,56 @@ const checkAndScheduleWebhookAt90Percent = async (
 };
 
 /**
+ * Error thrown when an atomic increment cannot proceed because the subscription
+ * has already consumed its full quota. Callers should treat this as a signal to
+ * rollback any work that was gated on quota availability.
+ */
+export class SubscriptionQuotaExceededError extends Error {
+	constructor(public readonly subscriptionId: string) {
+		super(`Subscription ${subscriptionId} has exceeded its request quota`);
+		this.name = "SubscriptionQuotaExceededError";
+	}
+}
+
+/**
  * Atomically increment subscription usage and schedule webhook task if threshold reached
  * Uses pg-tbus for reliable task queuing with built-in retries and audit logging
+ *
+ * The increment is guarded by `requestsConsumed < max_requests` at the SQL level
+ * so that N concurrent callers who each pass a pre-check with 1 remaining quota
+ * cannot all succeed — only the first UPDATE wins and the rest see 0 rows and
+ * receive `SubscriptionQuotaExceededError`. This closes the TOCTOU gap between
+ * `findActiveSubscription` and the increment.
+ *
  * @param subscriptionId - The subscription ID
  * @param team - The team with webhook configuration
  * @returns Updated subscription with new usage count
+ * @throws {SubscriptionQuotaExceededError} If quota is already exhausted.
  */
 export async function incrementSubscriptionUsage(
 	subscriptionId: string,
 	team: TeamApiSelectAll,
 ) {
-	// Atomically increment requestsConsumed
-	const updatedSubscription = await db.subscriptions
+	// Conditional atomic increment: only bumps requestsConsumed if the quota
+	// still has headroom. `find()` cannot be used here because it throws
+	// NotFoundError, and we need to distinguish "subscription missing" from
+	// "quota exceeded" — both would filter out with a chained `.where`.
+	const updatedRows = await db.subscriptions
 		.selectAll()
-		.find(subscriptionId)
+		.where({
+			subscriptionId,
+			requestsConsumed: { lt: sql`"max_requests"` },
+		})
 		.increment("requestsConsumed");
 
+	const updatedSubscription = updatedRows[0];
+
 	if (!updatedSubscription) {
-		throw new Error(`Subscription ${subscriptionId} not found`);
+		// Zero rows updated means either the subscription does not exist or
+		// its quota is already exhausted. In both cases the caller's gated
+		// work must be rolled back; surfacing a typed error lets the enclosing
+		// transaction abort cleanly.
+		throw new SubscriptionQuotaExceededError(subscriptionId);
 	}
 
 	// Check if usage threshold reached and schedule webhook task

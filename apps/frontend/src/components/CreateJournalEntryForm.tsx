@@ -116,12 +116,14 @@ export function CreateJournalEntryForm() {
 				}
 
 				// 2. Persist the entry itself.
+				// `teamId` is NOT sent — the server derives it from
+				// `ctx.activeTeamId` so a client can't plant/relocate an entry
+				// into another tenant.
 				await orpcFetch.journalEntries.create({
 					id: entryId,
 					content: data.content,
 					prompt: writingMode === "free" ? null : data.prompt ?? null,
 					promptId: writingMode === "free" ? null : randomPrompt?.id ?? null,
-					teamId: teamId ?? null,
 				});
 
 				// 3. Cleanup attachment state and revoke preview URLs.
@@ -144,7 +146,6 @@ export function CreateJournalEntryForm() {
 					id: ulid(),
 					prompt: null,
 					content: "",
-					teamId: teamId ?? null,
 				});
 
 				setSuccess("Journal entry created successfully!");
@@ -169,7 +170,6 @@ export function CreateJournalEntryForm() {
 				prompt: null,
 				content: "",
 				id: ulid(),
-				teamId: teamId ?? null,
 			},
 		},
 	});

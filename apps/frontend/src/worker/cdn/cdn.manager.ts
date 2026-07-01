@@ -55,6 +55,7 @@ export class CDNManager {
         fileName: item.file.name,
         resourceType,
         contentType: item.file.type,
+        contentLength: item.file.size,
       })),
     );
   }
@@ -71,7 +72,6 @@ export class CDNManager {
       await axios.put(presigned.signedUrl, file, {
         headers: {
           "Content-Type": file.type,
-          "x-amz-acl": "public-read",
         },
         onUploadProgress: (progressEvent) => {
           const progress = progressEvent.total

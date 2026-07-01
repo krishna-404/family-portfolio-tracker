@@ -21,12 +21,16 @@ const create = rpcProtectedActiveTeamProcedure
 	.route({ method: "POST", tags: ["Files"] })
 	.input(fileCreateInputZod)
 	.output(fileSelectAllZod)
-	.handler(async ({ input, context: { user } }) => {
+	.handler(async ({ input, context: { user, activeTeamId } }) => {
 		// Selective .merge() lets late-arriving cdnUrl/thumbnailCdnUrl land on an
 		// existing row without overwriting immutable fields (filename, owner).
+		//
+		// `teamId` is server-owned — pulled from `activeTeamId` on the auth
+		// context, NEVER from the client input, to prevent tenant-forgery.
 		const newFile = await db.files
 			.create({
 				...input,
+				teamId: activeTeamId,
 				createdByUserId: user.id,
 			})
 			.onConflict("id")
@@ -59,8 +63,8 @@ const pushCdnUpdates = rpcProtectedActiveTeamProcedure
 	.route({ method: "POST", tags: ["Files"] })
 	.input(filePushCdnUpdatesInputZod)
 	.output(filePushCdnUpdatesOutputZod)
-	.handler(async ({ input }) => {
-		return await pushFilesCdnUpdatesService(input);
+	.handler(async ({ input, context: { activeTeamId } }) => {
+		return await pushFilesCdnUpdatesService(input, activeTeamId);
 	});
 
 const pullBundles = rpcProtectedActiveTeamProcedure

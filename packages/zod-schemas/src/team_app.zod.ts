@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { teamMemberRoleZod } from "./enums.zod.js";
-import { zString, zTimeEpoch, zTimestamps } from "./zod_utils.js";
+import { zPhoneNumber, zString, zTimeEpoch, zTimestamps } from "./zod_utils.js";
 
 /**
  * TeamApp Schemas
@@ -15,7 +15,7 @@ export const teamAppMandatoryZod = z.object({
 });
 
 export const teamAppOptionalZod = z.object({
-  logoUrl: zString.nullable(),
+  logoUrl: z.url().max(2048).nullable(),
   createdByUserId: z.uuid(),
   personalTeamForUserId: z.uuid().nullable(),
   deletedAt: zTimeEpoch.nullable(),
@@ -23,6 +23,18 @@ export const teamAppOptionalZod = z.object({
 
 export const teamAppCreateInputZod = teamAppMandatoryZod.extend(teamAppOptionalZod.partial().shape);
 export type TeamAppCreateInput = z.infer<typeof teamAppCreateInputZod>;
+
+// API-facing create schema. Excludes server-controlled identity/tenancy fields
+// (`createdByUserId`, `personalTeamForUserId`, `deletedAt`) so authenticated
+// clients can't spoof team ownership or burn another user's personal-team slot
+// (soft-delete-partial unique on `personal_team_for_user_id`). The server
+// derives `createdByUserId` from the session and never accepts
+// `personalTeamForUserId` from clients — it's set only by server-only paths
+// (`getDefaultTeam` / `UserTable.afterCreate`).
+export const teamAppCreateApiInputZod = teamAppMandatoryZod.extend(
+  teamAppOptionalZod.pick({ logoUrl: true }).partial().shape,
+);
+export type TeamAppCreateApiInput = z.infer<typeof teamAppCreateApiInputZod>;
 
 export const teamAppSelectAllZod = teamAppMandatoryZod
   .extend(teamAppOptionalZod.shape)
@@ -46,8 +58,8 @@ export const teamAppMemberMandatoryZod = z.object({
 
 export const teamAppMemberOptionalZod = z.object({
   userId: z.uuid().nullable(),
-  email: zString.nullable(),
-  phoneNumber: zString.nullable(),
+  email: z.email().max(320).nullable(),
+  phoneNumber: zPhoneNumber.nullable(),
   joinedAt: zTimeEpoch.nullable(),
   deletedAt: zTimeEpoch.nullable(),
 });
@@ -64,8 +76,8 @@ export type TeamAppMemberRole = z.infer<typeof teamAppMemberRoleZod>;
 // `teamId` is derived from the `x-team-id` header on the RPC procedure, not
 // from the request body — callers implicitly add members to their active team.
 export const teamAppMemberAddInputZod = z.object({
-  email: z.email().optional().nullable(),
-  phoneNumber: zString.optional().nullable(),
+  email: z.email().max(320).optional().nullable(),
+  phoneNumber: zPhoneNumber.optional().nullable(),
   role: teamMemberRoleZod,
 }).refine(data => data.email || data.phoneNumber, {
   message: "Either email or phone number must be provided",

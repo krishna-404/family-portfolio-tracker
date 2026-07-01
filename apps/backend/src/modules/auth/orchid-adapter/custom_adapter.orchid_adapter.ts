@@ -7,6 +7,7 @@ import {
 } from "@backend/modules/auth/orchid-adapter/model_table_map.orchid_adapter";
 import { applyBetterAuthWhere } from "@backend/modules/auth/orchid-adapter/where_query_builder.orchid_adapter";
 import type { AdapterFactoryCustomizeAdapterCreator } from "@better-auth/core/db/adapter";
+import { NotFoundError } from "orchid-orm";
 
 export const createCustomAdapterOrchid =
 	(db: Db): AdapterFactoryCustomizeAdapterCreator =>
@@ -25,10 +26,24 @@ export const createCustomAdapterOrchid =
 
 			return result;
 		},
+		// better-auth's adapter contract for single-row update is
+		// `Promise<T | null>` — null signals "no row matched" without
+		// throwing. Orchid's `.take()` throws NotFoundError on zero rows,
+		// which would surface as a 500 from better_auth.handler on any
+		// benign race (e.g. session refresh landing microseconds after
+		// expiresAt, or a row falling out of the table's default scope
+		// between the read and the write). Catch that specific error and
+		// map to null; let anything else propagate. Pinned by
+		// custom_adapter.orchid_adapter.test.ts.
 		update: async ({ model, where, update: values }) => {
 			const modelName = validateModel(model);
 			const query = applyBetterAuthWhere(db[modelName], where);
-			return await query.take().selectAll().update(values);
+			try {
+				return await query.take().selectAll().update(values);
+			} catch (err) {
+				if (err instanceof NotFoundError) return null;
+				throw err;
+			}
 		},
 		updateMany: async ({ model, where, update: values }) => {
 			const modelName = validateModel(model);
@@ -50,8 +65,9 @@ export const createCustomAdapterOrchid =
 
 			return await joinedQuery.select(...validatedSelect).takeOptional();
 		},
-		findMany: async ({ model, where, sortBy, limit, offset, join }) => {
+		findMany: async ({ model, where, sortBy, limit, offset, join, select }) => {
 			const modelName = validateModel(model);
+			const validatedSelect = validateSelect(modelName, select);
 			let query = applyBetterAuthWhere(db[modelName], where);
 
 			if (sortBy) {
@@ -72,7 +88,7 @@ export const createCustomAdapterOrchid =
 			// Apply joins and get the select fields
 			const joinedQuery = applyJoins(query, join, db);
 
-			return await joinedQuery.selectAll();
+			return await joinedQuery.select(...validatedSelect);
 		},
 		count: async ({ model, where }) => {
 			const modelName = validateModel(model);

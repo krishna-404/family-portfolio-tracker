@@ -92,33 +92,13 @@ export function onLogout(): void {
 	}
 }
 
-/**
- * Called when the user leaves a team on the server (self-leaves or is
- * removed by an admin). Purges every local trace of the team — journal
- * entries, files (+ OPFS blobs), memberships, the teamsApp row, and
- * the sync cursors for that team.
- *
- * If the wiped team was the active team, the active team is cleared
- * locally. Callers should navigate the user to their team picker (or
- * their personal team) and call `setActiveTeam(newTeamId)`.
- */
-export async function wipeLocalTeamData(teamId: string): Promise<void> {
-	const proxy = await getDataProxy();
-	await proxy.sync.wipeTeamData(teamId);
-	// If the active team just got wiped, clear the header cache too.
-	// The worker already cleared its own cache in `wipeTeamData` when
-	// the active team matched.
-	if (typeof window !== "undefined") {
-		// No canonical read of "active team" on the main thread — the
-		// caller is expected to update the workspace context, which will
-		// re-invoke `setActiveTeam(newTeamId)`. Defensive: null here so
-		// no RPC leaks the wiped team id.
-		setActiveTeamIdForRequests(null);
-		if (isMediaProxyReady()) {
-			void getMediaProxy().then((mp) => mp.setActiveTeamId(null));
-		}
-	}
-}
+// NOTE: `wipeLocalTeamData` (main-thread bridge) and the matching
+// `SyncOrchestratorApi.wipeTeamData` surface were removed intentionally —
+// they had no callers. The underlying DB helper (`worker/db/team_data.wipe.ts`)
+// is retained as a reusable primitive for when the leave-team /
+// remove-member UI handlers and the pull-delta "you-were-removed" server
+// signal are wired end-to-end. When that lands, restore the orchestrator
+// method + main-thread bridge together so callers pick a single surface.
 
 /**
  * Full teardown for tests / hard resets — terminates the workers.

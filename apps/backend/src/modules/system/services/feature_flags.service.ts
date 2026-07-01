@@ -5,6 +5,9 @@ import type {
 	FeatureFlagSetInput,
 } from "@connected-repo/zod-schemas/feature_flag.zod";
 
+const TTL_MS = 5_000;
+const cache = new Map<string, { value: boolean; expiresAt: number }>();
+
 /**
  * Resolve a feature flag for the caller.
  *
@@ -22,27 +25,49 @@ import type {
  * will therefore keep a new-and-not-yet-flipped feature OFF until someone
  * flips it on explicitly. A typo in the key stays OFF as well.
  *
- * Cheap enough to call inline in a request path — the (key, scope, scopeId)
- * unique index makes each lookup a single-row primary-key hit.
+ * **In-process TTL cache (5s):** resolved values are memoized per
+ * (key, teamId, defaultValue) tuple for `TTL_MS` (5 seconds) to avoid a
+ * per-request DB tax on hot paths. The cache is fully invalidated whenever
+ * `setFeatureFlag` or `deleteFeatureFlag` runs in this process. The cache is
+ * per-Node-process — in a multi-instance deployment each instance keeps its
+ * own map, so a super-admin flag flip propagates independently on each
+ * instance within at most 5 seconds of the write on that instance.
  */
 export const isFeatureEnabled = async (
 	key: string,
 	teamId?: string | null,
 	defaultValue = false,
 ): Promise<boolean> => {
+	const cacheKey = `${key}::${teamId ?? "global"}::${defaultValue}`;
+	const now = Date.now();
+	const cached = cache.get(cacheKey);
+	if (cached && cached.expiresAt > now) {
+		return cached.value;
+	}
+
+	let resolved: boolean;
 	if (teamId) {
 		const teamRow = await db.featureFlags
 			.where({ key, scope: "team", scopeId: teamId })
 			.takeOptional();
-		if (teamRow) return teamRow.enabled;
+		if (teamRow) {
+			resolved = teamRow.enabled;
+			cache.set(cacheKey, { value: resolved, expiresAt: now + TTL_MS });
+			return resolved;
+		}
 	}
 
 	const globalRow = await db.featureFlags
 		.where({ key, scope: "global", scopeId: null })
 		.takeOptional();
-	if (globalRow) return globalRow.enabled;
+	if (globalRow) {
+		resolved = globalRow.enabled;
+	} else {
+		resolved = defaultValue;
+	}
 
-	return defaultValue;
+	cache.set(cacheKey, { value: resolved, expiresAt: now + TTL_MS });
+	return resolved;
 };
 
 /**
@@ -55,7 +80,7 @@ export const isFeatureEnabled = async (
 export const setFeatureFlag = async (
 	input: FeatureFlagSetInput,
 ): Promise<FeatureFlagSelectAll> => {
-	return await db.featureFlags
+	const result = await db.featureFlags
 		.create({
 			key: input.key,
 			scope: input.scope,
@@ -65,6 +90,8 @@ export const setFeatureFlag = async (
 		})
 		.onConflict(["key", "scope", "scopeId"])
 		.merge(["enabled", "notes"]);
+	cache.clear();
+	return result;
 };
 
 /**
@@ -88,4 +115,5 @@ export const listFeatureFlags = async (
  */
 export const deleteFeatureFlag = async (id: string): Promise<void> => {
 	await db.featureFlags.find(id).delete();
+	cache.clear();
 };

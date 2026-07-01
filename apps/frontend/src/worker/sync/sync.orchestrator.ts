@@ -6,7 +6,6 @@ import { initDb } from "../db/db.lifecycle";
 import { subscribe } from "../db/db.manager";
 import { filesDb } from "../db/files.db";
 import { syncMetadataDb } from "../db/sync_metadata.db";
-import { wipeTeamData } from "../db/team_data.wipe";
 import { teamMembersDb } from "../db/team_members.db";
 import { teamsAppDb } from "../db/teams_app.db";
 import { setActiveTeamId as _setActiveTeamId, getActiveTeamId } from "./active_team";
@@ -22,7 +21,6 @@ export interface SyncOrchestratorApi {
 	initForUser(userId: string): Promise<void>;
 	stop(): void;
 	setActiveTeamId(id: string | null): void;
-	wipeTeamData(teamId: string): Promise<void>;
 	processQueue(): Promise<void>;
 }
 
@@ -115,18 +113,25 @@ class SyncOrchestrator implements SyncOrchestratorApi {
 		if (id) this.processQueue();
 	}
 
-	/**
-	 * Purge every local trace of a team. Called when the user leaves a
-	 * team on the server (removed by an admin, or self-leaves). If the
-	 * wiped team was active, callers should follow up with
-	 * `setActiveTeamId(newTeamId)` before the next trigger fires.
-	 */
-	async wipeTeamData(teamId: string): Promise<void> {
-		await wipeTeamData(teamId);
-		if (getActiveTeamId() === teamId) {
-			_setActiveTeamId(null);
-		}
-	}
+	// NOTE: `wipeTeamData(teamId)` orchestrator method was removed — it had
+	// no callers. The DB helper `worker/db/team_data.wipe.ts` is retained
+	// for when leave-team / remove-member handlers and the pull-delta
+	// "you-were-removed" signal are wired. Restore this surface then so
+	// the main-thread bridge and orchestrator API move together.
+	//
+	// When restored, the wipe MUST coordinate with an in-flight `runCycle`
+	// or the local DB ends in a mixed state: the wipe transaction deletes
+	// rows while a still-running pull writes freshly-pulled rows back
+	// under the wiped team's cursor. Two acceptable strategies:
+	//   1. Bump a monotonic `generation` counter here, capture it at the
+	//      top of `runCycle`, and re-check it in `isContextStillValid`
+	//      (or between waves) so the cycle aborts cleanly before its
+	//      next write.
+	//   2. Await the current cycle's promise before running the wipe
+	//      transaction (serialising behind the `isProcessing` lock).
+	// Clearing the active team via `_setActiveTeamId(null)` alone is NOT
+	// sufficient — the running cycle has already captured the old teamId
+	// in `runCycle`'s closure and will keep writing under it.
 
 	/**
 	 * Entry point for every trigger. Locks against concurrent runs; if a
@@ -179,7 +184,7 @@ class SyncOrchestrator implements SyncOrchestratorApi {
 
 		// Wave 1 — anchor: mints `topLevelSyncedAt` and pulls team rows.
 		const topLevelSyncedAt = await this.pullTeamsApp(teamId, expectedUserId);
-		if (topLevelSyncedAt === null) return; // DB swapped, abort cycle.
+		if (topLevelSyncedAt === null) return; // DB swapped or team switched, abort cycle.
 
 		// Push and pull run as two parallel pipelines walking the remaining
 		// waves. Match the tezi model: `Future.wait([push, pull])`.
@@ -189,6 +194,26 @@ class SyncOrchestrator implements SyncOrchestratorApi {
 		]);
 	}
 
+	/**
+	 * True if the sync context is still what we captured at cycle start.
+	 * If either the user was swapped (DB reboot) or the active team was
+	 * swapped mid-cycle, subsequent RPC responses target a DIFFERENT team
+	 * and MUST NOT be written under the captured `teamId`'s cursor — that
+	 * would advance the old team's cursor past rows we never persisted,
+	 * causing permanent data loss when the user returns to it.
+	 */
+	private isContextStillValid(expectedTeamId: string, expectedUserId: string): boolean {
+		if (this.initialisedForUserId !== expectedUserId) return false;
+		if (getActiveTeamId() !== expectedTeamId) {
+			// biome-ignore lint/suspicious/noConsole: surfacing mid-cycle team switch aborts helps diagnose sync gaps
+			console.warn(
+				"[SyncOrchestrator] active team changed mid-cycle; aborting write to preserve old team's cursor",
+			);
+			return false;
+		}
+		return true;
+	}
+
 	// ─── Pull pipeline ─────────────────────────────────────────────────
 
 	private async pullTeamsApp(teamId: string, expectedUserId: string): Promise<number | null> {
@@ -196,7 +221,7 @@ class SyncOrchestrator implements SyncOrchestratorApi {
 		const res = await orpcFetch.teams.pullBundles({
 			syncMetadata: cursor ?? null,
 		});
-		if (this.initialisedForUserId !== expectedUserId) return null;
+		if (!this.isContextStillValid(teamId, expectedUserId)) return null;
 		await teamsAppDb.bulkUpsert(res.rows);
 		await syncMetadataDb.saveCursor("teamsApp", teamId, res.syncMetadata);
 		await syncMetadataDb.saveTopLevelSyncedAt(teamId, res.topLevelSyncedAt);
@@ -209,6 +234,10 @@ class SyncOrchestrator implements SyncOrchestratorApi {
 		// reference teams and members, files reference journal entries.
 		for (const table of this.WAVE_ORDER) {
 			if (table === "teamsApp") continue;
+			// Short-circuit if the team was swapped between waves — the next
+			// RPC would target the new team, but its results would be keyed
+			// under the old team's cursor.
+			if (getActiveTeamId() !== teamId) return;
 			try {
 				await this.pullTable(table, teamId, topLevelSyncedAt, expectedUserId);
 			} catch (err) {
@@ -232,28 +261,28 @@ class SyncOrchestrator implements SyncOrchestratorApi {
 
 		if (table === "teamMembers") {
 			const res = await orpcFetch.teams.pullMembersDelta(input);
-			if (this.initialisedForUserId !== expectedUserId) return;
+			if (!this.isContextStillValid(teamId, expectedUserId)) return;
 			await teamMembersDb.bulkUpsert(res.rows);
 			await syncMetadataDb.saveCursor(table, teamId, res.syncMetadata);
 			return;
 		}
 		if (table === "prompts") {
 			const res = await orpcFetch.prompts.pullBundles(input);
-			if (this.initialisedForUserId !== expectedUserId) return;
+			if (!this.isContextStillValid(teamId, expectedUserId)) return;
 			await promptsDb.bulkUpsert(res.rows);
 			await syncMetadataDb.saveCursor(table, teamId, res.syncMetadata);
 			return;
 		}
 		if (table === "journalEntries") {
 			const res = await orpcFetch.journalEntries.pullBundles(input);
-			if (this.initialisedForUserId !== expectedUserId) return;
+			if (!this.isContextStillValid(teamId, expectedUserId)) return;
 			await journalEntriesDb.bulkUpsertFromServer(res.rows);
 			await syncMetadataDb.saveCursor(table, teamId, res.syncMetadata);
 			return;
 		}
 		if (table === "files") {
 			const res = await orpcFetch.files.pullBundles(input);
-			if (this.initialisedForUserId !== expectedUserId) return;
+			if (!this.isContextStillValid(teamId, expectedUserId)) return;
 			await filesDb.bulkUpsertFromServer(res.rows);
 			await syncMetadataDb.saveCursor(table, teamId, res.syncMetadata);
 			return;
@@ -270,7 +299,7 @@ class SyncOrchestrator implements SyncOrchestratorApi {
 			console.warn("[SyncOrchestrator] pushJournalEntryCreates failed", err);
 		}
 		try {
-			await this.pushFileCdnUpdates(expectedUserId);
+			await this.pushFileCdnUpdates(teamId, expectedUserId);
 		} catch (err) {
 			// biome-ignore lint/suspicious/noConsole: intentional — surface push failure so devs know CDN upgrade path stalled
 			console.warn("[SyncOrchestrator] pushFileCdnUpdates failed", err);
@@ -283,6 +312,10 @@ class SyncOrchestrator implements SyncOrchestratorApi {
 
 		// Bundle each pending entry with its nested files. Files are the
 		// LOCAL rows attached to this journal entry.
+		// `teamId` on the parent is NOT sent — the server derives it from
+		// `ctx.activeTeamId` so a client can't relocate an entry to another
+		// tenant. The push route is already gated by `activeTeamId`, so this
+		// is the correct authority.
 		const creates = await Promise.all(
 			pending.map(async (entry) => {
 				const localFiles = await filesDb.getAllForParent("journalEntries", entry.id);
@@ -291,7 +324,6 @@ class SyncOrchestrator implements SyncOrchestratorApi {
 					content: entry.content,
 					prompt: entry.prompt,
 					promptId: entry.promptId,
-					teamId: entry.teamId,
 					deletedAt: entry.deletedAt,
 					files: localFiles.map((f) => ({
 						id: f.id,
@@ -312,7 +344,7 @@ class SyncOrchestrator implements SyncOrchestratorApi {
 		);
 
 		const res = await orpcFetch.journalEntries.pushCreates({ creates });
-		if (this.initialisedForUserId !== expectedUserId) return;
+		if (!this.isContextStillValid(teamId, expectedUserId)) return;
 
 		for (const result of res.results) {
 			if (result.ok && result.row) {
@@ -323,7 +355,7 @@ class SyncOrchestrator implements SyncOrchestratorApi {
 		}
 	}
 
-	private async pushFileCdnUpdates(expectedUserId: string): Promise<void> {
+	private async pushFileCdnUpdates(teamId: string, expectedUserId: string): Promise<void> {
 		const rows = await filesDb.getCdnUpdatesNeedingPush();
 		if (rows.length === 0) return;
 
@@ -336,7 +368,7 @@ class SyncOrchestrator implements SyncOrchestratorApi {
 		}));
 
 		const res = await orpcFetch.files.pushCdnUpdates({ updates });
-		if (this.initialisedForUserId !== expectedUserId) return;
+		if (!this.isContextStillValid(teamId, expectedUserId)) return;
 
 		for (const result of res.results) {
 			const row = rows.find((r) => r.id === result.id);

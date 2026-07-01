@@ -2,6 +2,7 @@ import { rpcProtectedActiveTeamProcedure } from "@backend/procedures/protected.p
 import { z } from "zod";
 import { checkFileExistsInCdnService } from "./services/check_file_exists.cdn.services";
 import {
+	cdnFileLocatorInput,
 	generatePresignedUrlService,
 	generateUrlInput,
 } from "./services/generate_presigned_url.cdn.services";
@@ -24,9 +25,10 @@ export const generatePresignedUrl = rpcProtectedActiveTeamProcedure
 			input,
 			context: {
 				user: { id: userId },
+				activeTeamId,
 			},
 		}) => {
-			return await generatePresignedUrlService(input, userId);
+			return await generatePresignedUrlService(input, userId, activeTeamId);
 		},
 	);
 
@@ -42,10 +44,13 @@ export const generateBatchPresignedUrls = rpcProtectedActiveTeamProcedure
 			input,
 			context: {
 				user: { id: userId },
+				activeTeamId,
 			},
 		}) => {
 			return await Promise.all(
-				input.map((file) => generatePresignedUrlService(file, userId)),
+				input.map((file) =>
+					generatePresignedUrlService(file, userId, activeTeamId),
+				),
 			);
 		},
 	);
@@ -55,7 +60,7 @@ export const generateBatchPresignedUrls = rpcProtectedActiveTeamProcedure
  */
 export const checkFileExistsInCdn = rpcProtectedActiveTeamProcedure
 	.route({ method: "GET", tags: ["CDN"] })
-	.input(generateUrlInput)
+	.input(cdnFileLocatorInput)
 	.output(
 		z.object({ exists: z.boolean(), key: z.string(), fetchUrl: z.string() }),
 	)
@@ -64,9 +69,10 @@ export const checkFileExistsInCdn = rpcProtectedActiveTeamProcedure
 			input,
 			context: {
 				user: { id: userId },
+				activeTeamId,
 			},
 		}) => {
-			return await checkFileExistsInCdnService(input, userId);
+			return await checkFileExistsInCdnService(input, userId, activeTeamId);
 		},
 	);
 

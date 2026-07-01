@@ -13,7 +13,11 @@ export const zTimeEpoch = z.coerce.number().int().min(0);
  * on every sync-able table. String because JSON has no bigint and the value
  * overflows Number.MAX_SAFE_INTEGER around year 2255.
  */
-export const zMicroSecondTimeString = z.coerce.string().regex(/^\d+$/);
+export const zMicroSecondTimeString = z.coerce
+	.string()
+	.min(1)
+	.max(20)
+	.regex(/^(0|[1-9]\d{0,19})$/);
 
 /**
  * Regex-based decimal validator. The previous toString()-based version

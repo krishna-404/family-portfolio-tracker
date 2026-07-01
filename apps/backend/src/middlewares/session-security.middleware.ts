@@ -3,6 +3,7 @@ import {
 	generateDeviceFingerprint,
 	getClientIpAddress,
 } from "@backend/utils/client-info.utils";
+import { logger } from "@backend/utils/logger.utils";
 import { type MiddlewareNextFn, ORPCError } from "@orpc/server";
 
 export interface SessionSecurityResult {
@@ -85,7 +86,14 @@ export const rpcSessionSecurityMiddleware =
 				case "moderate":
 					result.action = "warn";
 					// Log warning but allow access
-					console.warn("Session security warning:", result.reasons);
+					logger.warn(
+						{
+							reasons: result.reasons,
+							userId: context.user?.id,
+							sessionId: context.session?.id,
+						},
+						"Session security warning",
+					);
 					break;
 				case "low":
 					result.action = "allow";
@@ -102,10 +110,33 @@ export const rpcSessionSecurityMiddleware =
 	};
 
 /**
- * Check if two IP addresses are in the same /24 subnet
+ * Check if two IP addresses are in the same subnet.
+ *
+ * - IPv4: matches on /24 (first 3 octets).
+ * - IPv6: approximates /64 by comparing the first 4 hextets (the standard
+ *   end-user allocation). If either address uses the collapsed "::" form we
+ *   fall back to strict string equality — expanding the notation is
+ *   over-engineering for this heuristic.
  */
 function areSameSubnet(ip1: string, ip2: string): boolean {
 	try {
+		const isV6 = ip1.includes(":") || ip2.includes(":");
+		if (isV6) {
+			// Conservative fallback for collapsed notation.
+			if (ip1.includes("::") || ip2.includes("::")) {
+				return ip1 === ip2;
+			}
+			const p1 = ip1.split(":");
+			const p2 = ip2.split(":");
+			if (p1.length < 4 || p2.length < 4) return false;
+			return (
+				p1[0] === p2[0] &&
+				p1[1] === p2[1] &&
+				p1[2] === p2[2] &&
+				p1[3] === p2[3]
+			);
+		}
+
 		const parts1 = ip1.split(".");
 		const parts2 = ip2.split(".");
 

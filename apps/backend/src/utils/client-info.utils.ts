@@ -2,8 +2,45 @@ import { createHash } from "node:crypto";
 import { UAParser } from "ua-parser-js";
 
 /**
- * Extract IP address from request headers
- * Handles proxied requests by checking X-Forwarded-For header
+ * Extract the client IP address from request headers.
+ *
+ * ============================================================================
+ * !!! SECURITY-CRITICAL TRUST ASSUMPTION — READ BEFORE CHANGING DEPLOYMENT !!!
+ * ============================================================================
+ *
+ * This function UNCONDITIONALLY TRUSTS the `x-forwarded-for` and `x-real-ip`
+ * request headers. It performs NO validation of the upstream socket, NO
+ * trusted-proxy CIDR check, and NO hop-count enforcement.
+ *
+ * That trust is safe ONLY when this app is deployed strictly behind a reverse
+ * proxy (e.g. Cloudflare, AWS ALB, nginx, Caddy, Fly.io edge) that:
+ *   1. Terminates every inbound connection from the public internet, AND
+ *   2. STRIPS any client-supplied `x-forwarded-for` / `x-real-ip` values on
+ *      ingress and REWRITES them with the true client IP on every hop.
+ *
+ * If this app is EVER exposed directly to untrusted clients — even briefly,
+ * even on a "temporary" dev/staging endpoint reachable from the internet —
+ * a malicious client can forge these headers and spoof any IP they want.
+ * That spoofing silently breaks every security control that keys off the
+ * return value of this function, including but not limited to:
+ *
+ *   - Rate-limit bucket keys such as `login:ip:${addr}` — an attacker can
+ *     rotate forged IPs to bypass per-IP throttles on auth, OTP, etc.
+ *   - The OpenAPI IP-whitelist enforcement — an attacker can claim any
+ *     whitelisted source IP and gain access they should not have.
+ *   - Session-security IP-change detection — an attacker who steals a
+ *     session token can forge the original IP and evade re-auth prompts.
+ *
+ * IF THE DEPLOYMENT TOPOLOGY EVER CHANGES so that this process can receive
+ * connections directly from untrusted clients, THIS FUNCTION MUST BE HARDENED
+ * BEFORE THAT CHANGE SHIPS. The correct fix is to gate the header extraction
+ * on `req.socket.remoteAddress` matching a configured trusted-proxy allowlist
+ * (CIDR ranges of your known proxies); fall back to the socket peer address
+ * whenever the immediate peer is not a trusted proxy.
+ *
+ * Do not "just trust the header" in a new topology because it worked in the
+ * old one. The failure mode is silent, remote, and unauthenticated.
+ * ============================================================================
  */
 export function getClientIpAddress(headers: Headers) {
 	// Check X-Forwarded-For header (set by proxies/load balancers)

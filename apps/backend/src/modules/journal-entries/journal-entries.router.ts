@@ -56,18 +56,23 @@ const getById = rpcProtectedActiveTeamProcedure
 const create = rpcProtectedActiveTeamProcedure
 	.input(journalEntryCreateInputWithRelationsZod)
 	.output(journalEntrySelectAllWithRelationsZod)
-	.handler(async ({ input, context: { user } }) => {
+	.handler(async ({ input, context: { user, activeTeamId } }) => {
 		const { files, ...parent } = input;
 
+		// `teamId` on both parent and nested files is server-owned — pulled
+		// from `activeTeamId` on the auth context, NEVER from the client
+		// input, to prevent tenant-forgery via a spread-in field.
 		await db.journalEntries
 			.create({
 				...parent,
 				authorUserId: user.id,
+				teamId: activeTeamId,
 				...(files?.length
 					? {
 							files: {
 								create: files.map((f) => ({
 									...f,
+									teamId: activeTeamId,
 									tableName: "journalEntries" as const,
 									type: "attachment" as const,
 									createdByUserId: user.id,
@@ -135,8 +140,8 @@ const pushCreates = rpcProtectedActiveTeamProcedure
 	.route({ method: "POST", tags: ["Journal Entries"] })
 	.input(journalEntryPushCreatesInputZod)
 	.output(journalEntryPushCreatesOutputZod)
-	.handler(async ({ input, context: { user } }) => {
-		return await pushJournalEntryCreatesService(input, user.id);
+	.handler(async ({ input, context: { user, activeTeamId } }) => {
+		return await pushJournalEntryCreatesService(input, user.id, activeTeamId);
 	});
 
 const pullBundles = rpcProtectedActiveTeamProcedure

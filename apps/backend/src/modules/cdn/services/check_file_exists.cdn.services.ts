@@ -3,14 +3,15 @@ import { env } from "@backend/configs/env.config";
 import { generatePublicUrl, generateS3Key } from "@backend/utils/cdn.utils";
 import { s3Client } from "@backend/utils/s3.client";
 import type { z } from "zod";
-import type { generateUrlInput } from "./generate_presigned_url.cdn.services";
+import type { cdnFileLocatorInput } from "./generate_presigned_url.cdn.services";
 
 export const checkFileExistsInCdnService = async (
-	input: z.infer<typeof generateUrlInput>,
-	userId: string,
+	input: z.infer<typeof cdnFileLocatorInput>,
+	_userId: string,
+	activeTeamId: string,
 ) => {
 	const key = generateS3Key({
-		folderName: input.teamHandle ?? userId,
+		folderName: activeTeamId,
 		fileName: input.fileName,
 		resourceType: input.resourceType,
 		id: input.id,

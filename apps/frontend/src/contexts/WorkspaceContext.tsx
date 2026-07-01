@@ -6,6 +6,7 @@ import {
 } from "@frontend/utils/sync-triggers";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, type ReactNode, useContext, useEffect } from "react";
+import { useRevalidator } from "react-router";
 import { toast } from "react-toastify";
 import type { SessionInfo } from "./UserContext";
 
@@ -56,6 +57,7 @@ export function WorkspaceProvider({
 	sessionInfo,
 }: WorkspaceProviderProps) {
 	const queryClient = useQueryClient();
+	const revalidator = useRevalidator();
 	const userId = sessionInfo?.user?.id;
 	const activeTeamAppId = sessionInfo?.user?.activeTeamAppId ?? null;
 
@@ -74,11 +76,22 @@ export function WorkspaceProvider({
 	const setActiveTeamMutation = useMutation(
 		orpc.teams.setActiveTeam.mutationOptions({
 			onSuccess: async ({ activeTeamAppId: newId }) => {
-				// 1. Propagate to both header cache + worker cache atomically.
+				// 1. Propagate to both header cache + worker cache atomically
+				//    so subsequent requests carry the new team id.
 				await syncSetActiveTeam(newId);
-				// 2. Refresh session so `sessionInfo.user.activeTeamAppId`
-				//    reflects the new value; drives navbar + gating.
-				await queryClient.invalidateQueries();
+				// 2. Re-run the router's authLoader so `sessionInfo.user.activeTeamAppId`
+				//    (fed via useLoaderData) reflects the new value. Without this,
+				//    the loader-derived prop stays at the old team and downstream
+				//    consumers (activeWorkspace, useActiveTeamId, page enabled-gates,
+				//    the initSyncForUser effect) remain out of sync with the header,
+				//    causing team-B data to render under a team-A UI.
+				revalidator.revalidate();
+				// 3. Drop team-scoped React Query caches so refetches hit the
+				//    backend under the new team id. Narrowed from a blanket
+				//    invalidateQueries() to avoid nuking unrelated data.
+				await queryClient.invalidateQueries({
+					queryKey: orpc.teams.getMyTeams.queryOptions({}).queryKey,
+				});
 			},
 			onError: (err) => {
 				toast.error(err.message || "Failed to switch team");

@@ -41,9 +41,28 @@ const sentryClient = Sentry.init({
 	// (Datadog, Honeycomb, Jaeger, etc.) can stitch our traces. Sentry always
 	// emits `sentry-trace` + `baggage` — this adds `traceparent` alongside.
 	propagateTraceparent: true,
-	sendDefaultPii: true,
+	// PII/secret scrubbing: keep `sendDefaultPii` off until an explicit allowlist
+	// lands. `sendDefaultPii: true` opts into user IP, user-agent, and request
+	// headers on errors — which would ship `Authorization`, `Cookie`, `x-api-key`,
+	// and `x-tbus-*` tokens straight to Sentry.
+	sendDefaultPii: false,
 	profilesSampleRate: env.SENTRY_PROFILES_SAMPLE_RATE ?? 0,
 	tracesSampleRate: env.SENTRY_TRACES_SAMPLE_RATE ?? (isProd ? 0.1 : 1.0),
+	// Strip bound SQL parameter values from Postgres spans before they leave the
+	// process. `PgInstrumentation({ enhancedDatabaseReporting: true })` attaches
+	// the parameter array to every span as `db.statement.parameters` (and the
+	// `values` attribute on some OTel versions) — those values include password
+	// hashes, `apiSecretHash`, `subscriptionAlertWebhookBearerToken`, OTP codes,
+	// session tokens, and user emails. Drop them here so neither Sentry nor the
+	// OTLP exporter ever sees them.
+	beforeSendSpan: (span) => {
+		if (span.data) {
+			delete span.data["db.statement.parameters"];
+			delete span.data["db.sql.parameters"];
+			delete span.data.values;
+		}
+		return span;
+	},
 });
 
 export const otelNodeSdk = new NodeSDK({

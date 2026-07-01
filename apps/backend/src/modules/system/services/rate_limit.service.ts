@@ -1,4 +1,5 @@
 import { db } from "@backend/db/db";
+import { logger } from "@backend/utils/logger.utils";
 
 export interface RateLimitCheckResult {
 	allowed: boolean;
@@ -94,5 +95,6 @@ export const checkAndRecordRateLimit = async (
 		};
 	}
 
-	throw new Error(`Rate limit optimistic lock failed for key: ${key}`);
+	logger.warn({ key, limit, windowSeconds, retries: MAX_RETRIES }, "[rateLimit] optimistic lock exhausted — shedding as rate-limited");
+	return { allowed: false, currentCount: limit, limit, retryAfterSeconds: 1 };
 };

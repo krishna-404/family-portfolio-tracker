@@ -24,10 +24,17 @@ import { syncDeltaInputZod, syncMetadataZod } from "../sync.zod.js";
 //   * If the row is missing on the server (parent bundle hasn't landed
 //     yet), return {ok:false}; the client retries with backoff.
 
+// HTTPS-only URL. The backend (`pushFilesCdnUpdatesService`) additionally
+// validates that the host matches the configured S3/CDN allowlist so an
+// attacker can't deface a file row with a phishing/tracker URL. Do NOT weaken
+// this to `z.url()` — plain `z.url()` accepts any protocol and any host,
+// which is the exact URL-defacement vector we are closing here.
+const cdnHttpsUrlZod = z.url({ protocol: /^https$/ });
+
 export const filePushCdnUpdateItemZod = z.object({
 	id: z.ulid(),
-	cdnUrl: z.url().nullish(),
-	thumbnailCdnUrl: z.url().nullish(),
+	cdnUrl: cdnHttpsUrlZod.nullish(),
+	thumbnailCdnUrl: cdnHttpsUrlZod.nullish(),
 	isMainFileLost: z.boolean().nullish(),
 });
 export type FilePushCdnUpdateItem = z.infer<typeof filePushCdnUpdateItemZod>;

@@ -14,9 +14,20 @@ import { apple } from "better-auth/social-providers";
 import { generateAppleClientSecret } from "./lib/apple.lib";
 import { orchidAdapter } from "./orchid-adapter/factory.orchid_adapter";
 
-// Apple Client Secret is generated on-the-fly and cached for the process duration
-// (or could be periodically refreshed if the process is long-lived)
-const appleClientSecretFn = (async () => {
+// Apple Client Secret is a short-lived JWT (currently signed with a 1h expiry in
+// apple.lib.ts). We cache the generated secret alongside its expiry and rebuild
+// it lazily inside the auth `hooks.before` handler when it's within 60s of
+// expiring. Without this, a long-lived process would keep serving an expired
+// JWT and Apple would reject every /sign-in/social call with `invalid_client`.
+const APPLE_SECRET_TTL_MS = 60 * 60 * 1000; // must stay <= JWT expiry in apple.lib.ts
+const APPLE_SECRET_REFRESH_MARGIN_MS = 60 * 1000;
+
+let appleClientSecretCache:
+	| { secret: string; expiresAt: number }
+	| undefined;
+let appleClientSecretInflight: Promise<string | undefined> | undefined;
+
+async function getAppleClientSecret(): Promise<string | undefined> {
 	if (
 		!env.APPLE_CLIENT_ID ||
 		!env.APPLE_TEAM_ID ||
@@ -25,16 +36,43 @@ const appleClientSecretFn = (async () => {
 	) {
 		return undefined;
 	}
-	return generateAppleClientSecret({
-		clientId: env.APPLE_CLIENT_ID,
-		teamId: env.APPLE_TEAM_ID,
-		keyId: env.APPLE_KEY_ID,
-		privateKey: env.APPLE_PRIVATE_KEY,
-	}).catch((err) => {
-		logger.error({ err }, "Failed to generate Apple Client Secret");
-		return undefined;
-	});
-})();
+
+	const now = Date.now();
+	if (
+		appleClientSecretCache &&
+		now < appleClientSecretCache.expiresAt - APPLE_SECRET_REFRESH_MARGIN_MS
+	) {
+		return appleClientSecretCache.secret;
+	}
+
+	// De-dupe concurrent refreshes.
+	if (appleClientSecretInflight) {
+		return appleClientSecretInflight;
+	}
+
+	appleClientSecretInflight = (async () => {
+		try {
+			const secret = await generateAppleClientSecret({
+				clientId: env.APPLE_CLIENT_ID as string,
+				teamId: env.APPLE_TEAM_ID as string,
+				keyId: env.APPLE_KEY_ID as string,
+				privateKey: env.APPLE_PRIVATE_KEY as string,
+			});
+			appleClientSecretCache = {
+				secret,
+				expiresAt: Date.now() + APPLE_SECRET_TTL_MS,
+			};
+			return secret;
+		} catch (err) {
+			logger.error({ err }, "Failed to generate Apple Client Secret");
+			return undefined;
+		} finally {
+			appleClientSecretInflight = undefined;
+		}
+	})();
+
+	return appleClientSecretInflight;
+}
 
 // TODO: Instrument Better Auth with OpenTelemetry for automatic tracing
 // This will automatically create spans for all auth operations including:
@@ -84,7 +122,7 @@ export const auth = betterAuth({
 	],
 	hooks: {
 		before: createAuthMiddleware(async (ctx) => {
-			const appleClientSecret = await appleClientSecretFn;
+			const appleClientSecret = await getAppleClientSecret();
 
 			// 1. Update static web apple provider if it exists
 			const appleWebProvider = ctx.context.socialProviders.find(

@@ -1,4 +1,5 @@
 import { db } from "@backend/db/db";
+import { logger } from "@backend/utils/logger.utils";
 import type {
 	JournalEntryCreateInputWithRelations,
 	JournalEntryPushCreatesInput,
@@ -27,23 +28,24 @@ import type {
 export async function pushJournalEntryCreatesService(
 	input: JournalEntryPushCreatesInput,
 	authorUserId: string,
+	activeTeamId: string,
 ): Promise<JournalEntryPushCreatesOutput> {
 	if (input.creates.length === 0) return { results: [] };
 
 	try {
-		const bulkResults = await tryBulkInsert(input.creates, authorUserId);
+		const bulkResults = await tryBulkInsert(input.creates, authorUserId, activeTeamId);
 		return { results: bulkResults };
 	} catch (bulkErr) {
-		console.warn(
+		logger.warn(
+			{ err: bulkErr, count: input.creates.length },
 			"[journalEntries.pushCreates] bulk path failed; falling back to sequential per-row",
-			bulkErr,
 		);
 	}
 
 	const results: JournalEntryPushCreatesResult[] = [];
 	for (const c of input.creates) {
 		try {
-			const row = await insertOne(c, authorUserId);
+			const row = await insertOne(c, authorUserId, activeTeamId);
 			results.push({ ok: true, id: c.id, row });
 		} catch (err) {
 			results.push({
@@ -59,17 +61,20 @@ export async function pushJournalEntryCreatesService(
 async function tryBulkInsert(
 	creates: JournalEntryCreateInputWithRelations[],
 	authorUserId: string,
+	activeTeamId: string,
 ): Promise<JournalEntryPushCreatesResult[]> {
 	await db.journalEntries
 		.createMany(
 			creates.map(({ files, ...parent }) => ({
 				...parent,
 				authorUserId,
+				teamId: activeTeamId,
 				...(files?.length
 					? {
 							files: {
 								create: files.map((f) => ({
 									...f,
+									teamId: activeTeamId,
 									tableName: "journalEntries" as const,
 									type: "attachment" as const,
 									createdByUserId: authorUserId,
@@ -104,6 +109,7 @@ async function tryBulkInsert(
 async function insertOne(
 	c: JournalEntryCreateInputWithRelations,
 	authorUserId: string,
+	activeTeamId: string,
 ) {
 	const { files, ...parent } = c;
 
@@ -111,11 +117,13 @@ async function insertOne(
 		.create({
 			...parent,
 			authorUserId,
+			teamId: activeTeamId,
 			...(files?.length
 				? {
 						files: {
 							create: files.map((f) => ({
 								...f,
+								teamId: activeTeamId,
 								tableName: "journalEntries" as const,
 								type: "attachment" as const,
 								createdByUserId: authorUserId,

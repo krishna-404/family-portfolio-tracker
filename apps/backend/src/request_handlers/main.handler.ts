@@ -116,11 +116,9 @@ export async function mainRequestDispatcher(
 		});
 		if (mobileAppResult.matched) return;
 
-		if (!mobileAppResult.matched) {
-			if (!res.writableEnded) {
-				res.statusCode = 404;
-				res.end("No procedure matched");
-			}
+		if (!res.writableEnded) {
+			res.statusCode = 404;
+			res.end("No procedure matched");
 		}
 	} catch (error) {
 		const err = error instanceof Error ? error : new Error(String(error));
@@ -136,7 +134,7 @@ export async function mainRequestDispatcher(
 			res.end(
 				JSON.stringify({
 					error: "Internal Server Error",
-					message: err.message,
+					message: isDev ? err.message : "An unexpected error occurred",
 					stack: isDev ? err.stack : undefined,
 				}),
 			);

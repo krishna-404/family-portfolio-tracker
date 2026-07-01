@@ -1,9 +1,28 @@
 import { sql } from "@backend/db/base_table";
+import { db } from "@backend/db/db";
 import { getRequestContext } from "@backend/lib/request-context";
 import type { TablesToSync } from "@connected-repo/zod-schemas/enums.zod";
 import type { SyncMetadata } from "@connected-repo/zod-schemas/sync.zod";
 import { ORPCError } from "@orpc/server";
 import type { Query } from "orchid-orm";
+
+/**
+ * Maps the ORM-side `TablesToSync` name (as declared in
+ * `tablesToSyncZod` / `TABLES_TO_SYNC_ENUM`) to the underlying Postgres
+ * `relname` used by `pg_class` — i.e. the physical table name as created
+ * in `0001_initial_schema.ts`.
+ *
+ * Only the members of `TABLES_TO_SYNC_ENUM` are included; adding a new
+ * synced table means adding both the enum entry and its physical-name
+ * mapping here.
+ */
+const SYNCED_TABLE_TO_PG_RELNAME: Record<TablesToSync, string> = {
+	teamsApp: "teams_app",
+	teamMembers: "team_members",
+	prompts: "prompts",
+	journalEntries: "journal_entries",
+	files: "files",
+};
 
 export interface SyncDeltaOptions {
 	/**
@@ -114,11 +133,39 @@ export async function syncDeltaService<
 		query = query.where({ OR: orQuery });
 	}
 
-	const [rawList, totalCount] = await Promise.all([
+	/**
+	 * `totalRecords` is a **table-wide `pg_class.reltuples` estimate**, NOT
+	 * a filtered COUNT(*). It ignores the caller's tenant scope, soft-delete
+	 * status, author filter, and any sync-delta predicates — it reflects
+	 * every live row in the physical table cluster-wide.
+	 *
+	 * The estimate is refreshed only by autovacuum / ANALYZE, so:
+	 *   - A brand-new or recently `TRUNCATE`d table can report `0` or `-1`
+	 *     until the first ANALYZE runs; we coerce those to `0`.
+	 *   - After bulk inserts the number lags reality until autovacuum
+	 *     catches up.
+	 *
+	 * We accept this because `totalRecords` is a UI progress hint only
+	 * (e.g. "syncing ~N of ~M"), not a value any correctness logic depends
+	 * on. Swapping COUNT(*) for the estimate avoids a full seq-scan on
+	 * every delta pull.
+	 */
+	const pgRelname = SYNCED_TABLE_TO_PG_RELNAME[syncedTable];
+	const [rawList, reltuplesResult] = await Promise.all([
 		query.selectAll(),
-		scopedBaseQuery.count(),
+		db.$query<{ estimate: string | number | null }>`
+			SELECT reltuples::bigint AS estimate
+			FROM pg_class
+			WHERE relname = ${pgRelname}
+		`,
 	]);
 	const data = rawList as T[];
+
+	const rawEstimate = reltuplesResult.rows[0]?.estimate ?? 0;
+	const estimatedTotal = Number(rawEstimate);
+	// Never-analyzed tables report -1; coerce any negative/NaN to 0.
+	const totalCount =
+		Number.isFinite(estimatedTotal) && estimatedTotal > 0 ? estimatedTotal : 0;
 
 	let advancedFromCursorId = fromCursorId;
 	let advancedFromCursorUpdatedAt = fromCursorUpdatedAt;
