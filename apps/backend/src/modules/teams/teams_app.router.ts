@@ -1,8 +1,15 @@
 import { db } from "@backend/db/db";
-import { rpcProtectedProcedure } from "@backend/procedures/protected.procedure";
+import { rpcProtectedActiveTeamProcedure, rpcProtectedProcedure } from "@backend/procedures/protected.procedure";
 import { teamAppCreateInputZod, teamAppMemberAddInputZod, teamAppMemberRoleZod, teamAppMemberSelectAllZod, teamAppSelectAllZod, teamWithRoleZod } from "@connected-repo/zod-schemas/team_app.zod";
+import {
+	teamMembersPullDeltaInputZod,
+	teamMembersPullDeltaOutputZod,
+	teamsAppPullDeltaInputZod,
+	teamsAppPullDeltaOutputZod,
+} from "@connected-repo/zod-schemas/teams/sync";
 import { z } from "zod";
 import { createTeamService } from "./services/create_team.teams.service";
+import { pullTeamMembersService, pullTeamsAppService } from "./services/sync.teams.service";
 
 
 const getMyTeams = rpcProtectedProcedure
@@ -174,6 +181,29 @@ const getDefaultTeam = rpcProtectedProcedure
 		return personalTeam;
 	});
 
+// ─── Sync — wave-1 anchor ────────────────────────────────────────────────
+//
+// `pullDelta` mints `topLevelSyncedAt` and returns it so downstream
+// per-table pulls in the same cycle can echo it back as the snapshot
+// ceiling. Scoped to the caller's team memberships — uses the
+// authenticated procedure (not active-team) because the client hasn't
+// necessarily picked a team yet during the initial sync.
+const pullDelta = rpcProtectedProcedure
+	.route({ method: "POST", tags: ["Teams"] })
+	.input(teamsAppPullDeltaInputZod)
+	.output(teamsAppPullDeltaOutputZod)
+	.handler(async ({ input, context: { user } }) => {
+		return await pullTeamsAppService(input, user.id);
+	});
+
+const pullMembersDelta = rpcProtectedActiveTeamProcedure
+	.route({ method: "POST", tags: ["Teams"] })
+	.input(teamMembersPullDeltaInputZod)
+	.output(teamMembersPullDeltaOutputZod)
+	.handler(async ({ input, context: { activeTeamId } }) => {
+		return await pullTeamMembersService(input, activeTeamId);
+	});
+
 export const teamsAppRouter = {
 	getMyTeams,
 	createTeam,
@@ -182,4 +212,6 @@ export const teamsAppRouter = {
 	removeTeamMember,
 	updateMemberRole,
 	getDefaultTeam,
+	pullDelta,
+	pullMembersDelta,
 };

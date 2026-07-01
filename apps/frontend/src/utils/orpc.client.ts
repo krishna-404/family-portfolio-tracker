@@ -4,6 +4,7 @@ import { RPCLink } from '@orpc/client/fetch';
 import { SimpleCsrfProtectionLinkPlugin } from '@orpc/client/plugins';
 import { toast } from 'react-toastify';
 import type { UserAppRouter, UserAppRouterInputs, UserAppRouterOutputs } from "../../../backend/src/routers/user_app/user_app.router";
+import { getActiveTeamIdForRequests } from "./active_team_header.client";
 import { signout } from './signout.utils';
 
 interface ClientContext {
@@ -12,12 +13,15 @@ interface ClientContext {
 
 const link = new RPCLink<ClientContext>({
   url: `${env.VITE_API_URL}/user-app`,
-  headers: ({ context }) => (
-    { 
-        Authorization: 'Bearer token',
-        'x-api-key': context.something
-    }
-  ),
+  headers: ({ context }) => {
+    const teamId = getActiveTeamIdForRequests();
+    const headers: Record<string, string> = {
+      Authorization: 'Bearer token',
+    };
+    if (context.something) headers['x-api-key'] = context.something;
+    if (teamId) headers['x-team-id'] = teamId;
+    return headers;
+  },
   fetch: (request, init, _options, _path, _input) => {
     return globalThis.fetch(request, {
       ...init,

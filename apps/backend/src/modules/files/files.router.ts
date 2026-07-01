@@ -1,8 +1,15 @@
 import { db } from "@backend/db/db";
-import { rpcProtectedProcedure } from "@backend/procedures/protected.procedure";
+import { rpcProtectedActiveTeamProcedure, rpcProtectedProcedure } from "@backend/procedures/protected.procedure";
 import { fileTableNameZod } from "@connected-repo/zod-schemas/enums.zod";
 import { fileCreateInputZod, fileSelectAllZod } from "@connected-repo/zod-schemas/file.zod";
+import {
+	filePullDeltaInputZod,
+	filePullDeltaOutputZod,
+	filePushCdnUpdatesInputZod,
+	filePushCdnUpdatesOutputZod,
+} from "@connected-repo/zod-schemas/files/sync";
 import { z } from "zod";
+import { pullFilesService, pushFilesCdnUpdatesService } from "./services/sync.files.service";
 
 const create = rpcProtectedProcedure
 	.route({ method: "POST", tags: ["Files"] })
@@ -39,7 +46,25 @@ const getByTableId = rpcProtectedProcedure
 			.order({ createdAt: "ASC" });
 	});
 
+const pushCdnUpdates = rpcProtectedActiveTeamProcedure
+	.route({ method: "POST", tags: ["Files"] })
+	.input(filePushCdnUpdatesInputZod)
+	.output(filePushCdnUpdatesOutputZod)
+	.handler(async ({ input }) => {
+		return await pushFilesCdnUpdatesService(input);
+	});
+
+const pullDelta = rpcProtectedActiveTeamProcedure
+	.route({ method: "POST", tags: ["Files"] })
+	.input(filePullDeltaInputZod)
+	.output(filePullDeltaOutputZod)
+	.handler(async ({ input, context: { activeTeamId } }) => {
+		return await pullFilesService(input, activeTeamId);
+	});
+
 export const filesRouter = {
 	create,
 	getByTableId,
+	pushCdnUpdates,
+	pullDelta,
 };

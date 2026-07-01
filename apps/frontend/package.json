@@ -17,6 +17,7 @@
 		"better-auth": "^1.5.0",
 		"browser-image-compression": "^2.0.2",
 		"comlink": "^4.4.2",
+		"dexie": "^4.3.0",
 		"material-react-table": "^3.2.1",
 		"mp4box": "^2.3.0",
 		"pdfjs-dist": "^5.4.624",

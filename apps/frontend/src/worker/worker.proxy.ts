@@ -1,33 +1,67 @@
 import * as Comlink from "comlink";
+import type { DataWorkerAPI } from "./data.worker";
 import type { MediaWorkerAPI } from "./media.worker";
 import { ProxyCell } from "./utils/ProxyCell";
 
 let mediaWorker: Worker | null = null;
+let dataWorker: Worker | null = null;
 
 const mediaProxyCell = new ProxyCell<Comlink.Remote<MediaWorkerAPI>>();
+const dataProxyCell = new ProxyCell<Comlink.Remote<DataWorkerAPI>>();
 
 /**
- * Gets a singleton proxy to the dedicated MediaWorker (thumbnail generation
- * and CDN upload pipeline). The worker is lazily instantiated on first call.
+ * Singleton proxy to the MediaWorker (thumbnail generation, CDN upload).
+ * Lazily instantiated on first call.
  */
 export const getMediaProxy = (): Promise<Comlink.Remote<MediaWorkerAPI>> => {
-  if (mediaProxyCell.isInitial) {
-    const worker = new Worker(new URL("./media.worker.ts", import.meta.url), {
-      type: "module",
-    });
-    mediaWorker = worker;
-    mediaProxyCell.set(Comlink.wrap<MediaWorkerAPI>(worker));
-  }
-  return mediaProxyCell.get();
+	if (mediaProxyCell.isInitial) {
+		const worker = new Worker(new URL("./media.worker.ts", import.meta.url), {
+			type: "module",
+		});
+		mediaWorker = worker;
+		mediaProxyCell.set(Comlink.wrap<MediaWorkerAPI>(worker));
+	}
+	return mediaProxyCell.get();
 };
 
 /**
- * Terminates all active worker singletons.
+ * Singleton proxy to the DataWorker (Dexie + sync orchestrator).
+ *
+ * On first call: spawns the worker, wraps with Comlink, and bridges the
+ * MediaWorker proxy into it so the sync orchestrator can invoke CDN
+ * operations directly (without hopping through the main thread every
+ * time).
  */
-export const terminateWorkers = () => {
-  if (mediaWorker) {
-    mediaWorker.terminate();
-    mediaWorker = null;
-    mediaProxyCell.reset();
-  }
+export const getDataProxy = (): Promise<Comlink.Remote<DataWorkerAPI>> => {
+	if (dataProxyCell.isInitial) {
+		const worker = new Worker(new URL("./data.worker.ts", import.meta.url), {
+			type: "module",
+		});
+		dataWorker = worker;
+		const proxy = Comlink.wrap<DataWorkerAPI>(worker);
+		dataProxyCell.set(proxy);
+		// Bridge the media proxy into the data worker so the sync
+		// orchestrator can invoke it without going through the main thread.
+		getMediaProxy().then((media) => {
+			proxy.setMediaProxy(Comlink.proxy(media));
+		});
+	}
+	return dataProxyCell.get();
+};
+
+/**
+ * Terminates all active worker singletons. Call on sign-out to release
+ * resources; the workers will be re-spawned on next `getDataProxy()`.
+ */
+export const terminateWorkers = (): void => {
+	if (mediaWorker) {
+		mediaWorker.terminate();
+		mediaWorker = null;
+		mediaProxyCell.reset();
+	}
+	if (dataWorker) {
+		dataWorker.terminate();
+		dataWorker = null;
+		dataProxyCell.reset();
+	}
 };

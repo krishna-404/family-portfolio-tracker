@@ -15,6 +15,6 @@ export class TeamApiTable extends BaseTable {
     rateLimitPerMinute: t.integer(),
     subscriptionAlertWebhookUrl: t.string().nullable(),
     subscriptionAlertWebhookBearerToken: t.string().nullable().select(false),
-    ...t.timestamps(),
+    ...t.timestampsAsNumbers(),
   }));
 }

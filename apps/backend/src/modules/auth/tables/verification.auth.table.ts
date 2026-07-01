@@ -7,7 +7,7 @@ export class VerificationTable extends BaseTable {
 		identifier: t.string(),
 		value: t.text(),
 		expiresAt: t.timestampNumber(),
-		...t.timestamps(),
+		...t.timestampsAsNumbers(),
 	}),
 	(t) => [
 		t.primaryKey(["identifier", "value"]),

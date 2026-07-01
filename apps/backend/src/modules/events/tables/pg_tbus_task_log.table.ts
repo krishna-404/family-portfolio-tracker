@@ -44,7 +44,7 @@ export class PgTbusTaskLogTable extends BaseTable {
       retryLimit: t.integer().nullable(), // Max retries allowed
       willRetry: t.boolean().nullable(), // Will pg-tbus retry this?
 
-      ...t.timestamps(),
+      ...t.timestampsAsNumbers(),
     }),
     (t) => [
       t.index(["taskName", "status"]), // Query by task type and status

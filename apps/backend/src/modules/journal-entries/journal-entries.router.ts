@@ -1,5 +1,5 @@
 import { db } from "@backend/db/db";
-import { rpcProtectedProcedure } from "@backend/procedures/protected.procedure";
+import { rpcProtectedActiveTeamProcedure, rpcProtectedProcedure } from "@backend/procedures/protected.procedure";
 import {
 	journalEntryCreateInputZod,
 	journalEntryDeleteZod,
@@ -7,8 +7,18 @@ import {
 	journalEntryGetByUserZod,
 	journalEntrySelectAllZod,
 } from "@connected-repo/zod-schemas/journal_entry.zod";
+import {
+	journalEntryCreateInputWithRelationsZod,
+	journalEntryPullDeltaInputZod,
+	journalEntryPullDeltaOutputZod,
+	journalEntryPushCreatesInputZod,
+	journalEntryPushCreatesOutputZod,
+	journalEntrySelectAllWithRelationsZod,
+} from "@connected-repo/zod-schemas/journal-entries/sync";
 import { userSelectAllZod } from "@connected-repo/zod-schemas/user.zod";
 import { z } from "zod";
+import { pushJournalEntryCreatesService } from "./services/push_creates.journal_entries.service";
+import { pullJournalEntriesService } from "./services/sync.journal_entries.service";
 
 // Get all journal entries for the authenticated user, optionally filtered by team
 const getAll = rpcProtectedProcedure
@@ -46,22 +56,47 @@ const getById = rpcProtectedProcedure
 		return journalEntry;
 	});
 
-// Create journal entry
-const create = rpcProtectedProcedure
-	.input(journalEntryCreateInputZod)
-	.output(journalEntrySelectAllZod)
+// Create journal entry.
+//
+// Accepts the SAME create-with-relations shape as `pushCreates`: parent +
+// optional nested `files: FileCreateInput[]`. This keeps the online and
+// offline write paths structurally identical — the `OnlineFirstAdapter`
+// on the client sends the exact same payload whether it lands here
+// immediately or falls back to the offline queue that flushes via
+// `pushCreates`.
+const create = rpcProtectedActiveTeamProcedure
+	.input(journalEntryCreateInputWithRelationsZod)
+	.output(journalEntrySelectAllWithRelationsZod)
 	.handler(async ({ input, context: { user } }) => {
+		const { files, ...parent } = input;
 
-		let newJournalEntry = await db.journalEntries.create({
-			...input,
-			authorUserId: user.id,
-		}).onConflictDoNothing();
+		await db.journalEntries
+			.create({
+				...parent,
+				authorUserId: user.id,
+				...(files?.length
+					? {
+							files: {
+								create: files.map((f) => ({
+									...f,
+									tableName: "journalEntries" as const,
+									type: "attachment" as const,
+									createdByUserId: user.id,
+								})),
+							},
+						}
+					: {}),
+			})
+			.onConflictDoNothing("id");
 
-		if (!newJournalEntry) {
-			newJournalEntry = await db.journalEntries.selectAll().find(input.id);
-		}
+		const [canonicalParent, canonicalFiles] = await Promise.all([
+			db.journalEntries.find(input.id).selectAll(),
+			db.files
+				.where({ tableName: "journalEntries", type: "attachment", tableId: input.id })
+				.selectAll(),
+		]);
 
-		return newJournalEntry;
+		return { ...canonicalParent, files: canonicalFiles };
 	});
 
 // Get journal entries by user
@@ -110,6 +145,24 @@ const deleteEntry = rpcProtectedProcedure
 		return { success: true };
 	});
 
+// ─── Sync ───────────────────────────────────────────────────────────────
+
+const pushCreates = rpcProtectedActiveTeamProcedure
+	.route({ method: "POST", tags: ["Journal Entries"] })
+	.input(journalEntryPushCreatesInputZod)
+	.output(journalEntryPushCreatesOutputZod)
+	.handler(async ({ input, context: { user } }) => {
+		return await pushJournalEntryCreatesService(input, user.id);
+	});
+
+const pullDelta = rpcProtectedActiveTeamProcedure
+	.route({ method: "POST", tags: ["Journal Entries"] })
+	.input(journalEntryPullDeltaInputZod)
+	.output(journalEntryPullDeltaOutputZod)
+	.handler(async ({ input, context: { user, activeTeamId } }) => {
+		return await pullJournalEntriesService(input, user.id, activeTeamId);
+	});
+
 export const journalEntriesRouter = {
 	getAll,
 	getById,
@@ -117,4 +170,6 @@ export const journalEntriesRouter = {
 	update,
 	getByUser,
 	delete: deleteEntry,
+	pushCreates,
+	pullDelta,
 };

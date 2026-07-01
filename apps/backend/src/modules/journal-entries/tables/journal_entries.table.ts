@@ -39,7 +39,7 @@ export class JournalEntryTable extends BaseTable {
 	readonly softDelete = true;
 
 	relations = {
-		attachments: this.hasMany(() => FileTable, {
+		files: this.hasMany(() => FileTable, {
 			columns: ["id"],
 			references: ["tableId"],
 			on: {

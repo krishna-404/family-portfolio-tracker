@@ -24,7 +24,7 @@ export class UserTable extends BaseTable {
 			onDelete: "RESTRICT",
 			onUpdate: "RESTRICT",
 		}).nullable(),
-		...t.timestamps(),
+		...t.timestampsAsNumbers(),
 	}));
 
 	relations = {

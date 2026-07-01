@@ -9,6 +9,13 @@ export const zBigint = (min = -9223372036854775808n, max = 9223372036854775807n)
 export const zTimeEpoch = z.coerce.number().int().min(0);
 
 /**
+ * Microsecond-since-epoch as a base-10 string. Wire format for `updatedAt`
+ * on every sync-able table. String because JSON has no bigint and the value
+ * overflows Number.MAX_SAFE_INTEGER around year 2255.
+ */
+export const zMicroSecondTimeString = z.coerce.string().regex(/^\d+$/);
+
+/**
  * Regex-based decimal validator. The previous toString()-based version
  * mis-counted significant digits for scientific notation (e.g. `1e10`) and
  * mishandled leading zeros. This version normalises the input to a canonical
@@ -65,7 +72,18 @@ export const zVarchar = (minLength = 0, maxLength = 255) => zString.min(minLengt
 
 export const zText = (minLength = 0) => zString.min(minLength);
 
+/**
+ * Default timestamps shape for SYNCED tables. `updatedAt` is a µs-string
+ * because the pull-delta protocol needs microsecond precision + strict
+ * ordering. Use `zTimestampsAsNumbers` for non-synced tables (auth/logs).
+ */
 export const zTimestamps = {
+	createdAt: zTimeEpoch,
+	updatedAt: zMicroSecondTimeString,
+};
+
+/** Legacy ms-epoch timestamps for zod schemas of non-synced tables. */
+export const zTimestampsAsNumbers = {
 	createdAt: zTimeEpoch,
 	updatedAt: zTimeEpoch,
 };

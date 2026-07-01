@@ -21,7 +21,7 @@ export class SubscriptionsTable extends BaseTable {
     paymentReceivedDate: t.timestampNumber().nullable(),
     paymentTransactionId: t.string().nullable(),
 
-    ...t.timestamps(),
+    ...t.timestampsAsNumbers(),
     }), 
     (t) => t.index(['teamApiId', 'teamUserReferenceId', 'apiProductSku'])
   );

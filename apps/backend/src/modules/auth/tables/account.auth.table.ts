@@ -17,7 +17,7 @@ export class AccountTable extends BaseTable {
 		scope: t.text().nullable(),
 		idToken: t.text().nullable(),
 		password: t.text().nullable(),
-		...t.timestamps(),
+		...t.timestampsAsNumbers(),
 	}),
 	(t) => [
 		t.index(["userId"]),

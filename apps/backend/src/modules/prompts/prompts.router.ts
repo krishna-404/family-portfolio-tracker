@@ -1,11 +1,17 @@
 import { db } from "@backend/db/db";
-import { rpcProtectedProcedure } from "@backend/procedures/protected.procedure";
+import { syncDeltaService } from "@backend/modules/sync/services/sync_delta.sync.service";
+import { rpcProtectedActiveTeamProcedure, rpcProtectedProcedure } from "@backend/procedures/protected.procedure";
 import { rpcPublicProcedure } from "@backend/procedures/public.procedure";
 import {
 	promptGetByCategoryZod,
 	promptGetByIdZod,
 	promptSelectAllZod,
+	type PromptSelectAll,
 } from "@connected-repo/zod-schemas/prompt.zod";
+import {
+	promptsPullDeltaInputZod,
+	promptsPullDeltaOutputZod,
+} from "@connected-repo/zod-schemas/prompts/sync";
 import { ORPCError } from "@orpc/server";
 import { z } from "zod";
 
@@ -91,9 +97,29 @@ const getByCategory = rpcProtectedProcedure
 		return prompts;
 	});
 
+// ─── Sync ───────────────────────────────────────────────────────────────
+//
+// Prompts are a global (untenanted) table. Filtered only by the wave-1
+// snapshot ceiling.
+const pullDelta = rpcProtectedActiveTeamProcedure
+	.route({ method: "POST", tags: ["Prompts"] })
+	.input(promptsPullDeltaInputZod)
+	.output(promptsPullDeltaOutputZod)
+	.handler(async ({ input }) => {
+		const { data, syncMetadata } = await syncDeltaService<PromptSelectAll>({
+			// biome-ignore lint/suspicious/noExplicitAny: __scopes generic mismatch when passing bare table query
+			baseQuery: db.prompts as any,
+			syncMetadataInput: input.syncMetadata,
+			topLevelSyncedAt: input.topLevelSyncedAt,
+			syncedTable: "prompts",
+		});
+		return { rows: data, syncMetadata };
+	});
+
 export const promptsRouter = {
 	getAllActive,
 	getRandomActive,
 	getById,
 	getByCategory,
+	pullDelta,
 };

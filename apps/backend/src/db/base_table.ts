@@ -14,6 +14,27 @@ import {
 import { createBaseTable } from "orchid-orm";
 import { ulid } from "ulid";
 
+/**
+ * Convert a Postgres timestamp value to microseconds-since-epoch, as a base-10
+ * string. Used as the wire format for `updatedAt` on every sync-able table so
+ * the two-cursor pull protocol can order rows with strict `>` / `<` semantics
+ * at microsecond precision. String because JSON has no bigint and the value
+ * overflows Number.MAX_SAFE_INTEGER around year 2255.
+ */
+export function parseMicrosecondsToEpochStr(input: unknown): string {
+	if (!input) return "0";
+
+	const dateStr = input instanceof Date ? input.toISOString() : String(input);
+	const msEpoch = BigInt(Date.parse(dateStr));
+
+	const match = dateStr.match(/\.(\d+)/);
+	if (!match?.[1]) return (msEpoch * 1000n).toString();
+
+	const fullFraction = match[1].padEnd(6, "0");
+	const microsecondsStr = fullFraction.slice(3, 6);
+	return (msEpoch * 1000n + BigInt(microsecondsStr)).toString();
+}
+
 export const BaseTable = createBaseTable({
 	autoForeignKeys: false,
 	nowSQL: `clock_timestamp() AT TIME ZONE 'UTC'`,
@@ -40,7 +61,21 @@ export const BaseTable = createBaseTable({
 		ulidWithDefault: () => t.string(26).default(() => ulid()),
 		webhookStatusEnum: () => t.enum("webhook_status_enum", WEBHOOK_STATUS_ENUM),
 
+		/**
+		 * `updatedAt` is transported as a µs-string so the pull-delta protocol
+		 * can order rows with strict `>` / `<` semantics at microsecond precision.
+		 * Use this on every sync-able table (journal_entries, files, prompts,
+		 * teams_app, team_members, etc.). Auth / session / log tables that are
+		 * NOT part of the sync engine can use `timestampsAsNumbers()` instead
+		 * to keep the older ms-epoch shape.
+		 */
 		timestamps: () => ({
+			createdAt: t.timestamps().createdAt.asNumber(),
+			updatedAt: t.timestamps().updatedAt.parse(parseMicrosecondsToEpochStr),
+		}),
+
+		/** Legacy ms-epoch timestamps for tables outside the sync engine. */
+		timestampsAsNumbers: () => ({
 			createdAt: t.timestamps().createdAt.asNumber(),
 			updatedAt: t.timestamps().updatedAt.asNumber(),
 		}),
@@ -104,7 +139,7 @@ export const BaseTable = createBaseTable({
 				}),
 				deletedAt: t.timestamp().asNumber().nullable(),
 				createdAt: t.timestamps().createdAt.asNumber(),
-				updatedAt: t.timestamps().updatedAt.asNumber(),
+				updatedAt: t.timestamps().updatedAt.parse(parseMicrosecondsToEpochStr),
 			};
 
 			return (options?.omit ? omitKeys(allFields, options.omit) : allFields) as Omit<

@@ -19,7 +19,7 @@ export class ApiProductRequestLogsTable extends BaseTable {
       responseText: t.text().nullable(),
       responseJson: t.json<Record<string, unknown>>().nullable(),
       responseTime: t.integer(),
-      ...t.timestamps(),
+      ...t.timestampsAsNumbers(),
     }),
     (t) => t.index([
       "teamApiId", 
