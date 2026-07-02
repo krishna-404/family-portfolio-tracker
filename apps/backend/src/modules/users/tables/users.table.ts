@@ -1,6 +1,9 @@
 import { BaseTable } from "@backend/db/base_table";
 import { db } from "@backend/db/db";
-import { userCreatedEventDef } from "@backend/events/events.schema";
+import {
+	userCreatedEventDef,
+	userDeletedEventDef,
+} from "@backend/events/events.schema";
 import { orchidToTbusQueryAdapter } from "@backend/events/events.utils";
 import { tbus } from "@backend/events/tbus";
 import { TeamMemberTable } from "@backend/modules/teams/tables/team_members.table";
@@ -19,7 +22,14 @@ export class UserTable extends BaseTable {
 		image: t.string().nullable(),
 		timezone: t.string().default("Etc/UTC"),
 		themeSetting: t.themeSettingEnum(),
-		journalReminderTimes: t.array(t.string()).default([]),
+		// PG `time[]` on disk (constraint at DB level), "HH:MM" on the wire.
+		// `.parse()` strips the ":SS" that Postgres appends when returning
+		// `time` values, so the API surface matches Zod's z.iso.time({
+		// precision: -1 }) contract in uniqueTimeArrayZod. Input side is
+		// symmetric: PG accepts "HH:MM" as a valid `time` literal.
+		journalReminderTimes: t
+			.array(t.time().parse((v) => v.slice(0, 5)))
+			.default([]),
 		activeTeamAppId: t
 			.ulid()
 			.foreignKey("teams_app", "id", {
@@ -118,5 +128,20 @@ export class UserTable extends BaseTable {
 				);
 			},
 		);
+
+		// Better-auth account deletion (or admin delete) removes the row here.
+		// CASCADE handles push_devices, journal_entries, memberships, etc. on
+		// our side; the event exists so the Novu subscriber gets deleted too
+		// (see user_deleted.notifications.user.ts). Fires inside the same
+		// transaction as the delete so a failed publish rolls the delete back.
+		this.afterDelete(["id"], async (users, queryCtx) => {
+			await Promise.all(
+				users.map((user) =>
+					tbus.publish(userDeletedEventDef.from({ userId: user.id }), {
+						query: orchidToTbusQueryAdapter(queryCtx),
+					}),
+				),
+			);
+		});
 	}
 }

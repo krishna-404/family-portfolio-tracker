@@ -9,6 +9,13 @@ export const userCreatedEventDef = defineEvent({
 	}),
 });
 
+export const userDeletedEventDef = defineEvent({
+	event_name: "user.deleted",
+	schema: Type.Object({
+		userId: Type.String({ format: "uuid" }),
+	}),
+});
+
 /**
  * Example on-demand notification task. Triggered explicitly by application
  * code via `tbus.send(userReminderTaskDef.from(...))` — no automatic scheduler.

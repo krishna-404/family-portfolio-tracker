@@ -12,6 +12,8 @@ import {
 	isStaging,
 	isTest,
 } from "@backend/configs/env.config";
+import { startReconcileFcmTokensCron } from "@backend/cron_jobs/reconcile_fcm_tokens.cron";
+import { startReminderDispatchCron } from "@backend/cron_jobs/reminder_dispatch.cron";
 import { startEventBus } from "@backend/events/events.utils";
 import { captureBackendException } from "@backend/utils/backend-error-tracking.utils";
 import { handleServerClose } from "@backend/utils/graceful_shutdown.utils";
@@ -62,6 +64,8 @@ try {
 	});
 
 	startEventBus();
+	startReminderDispatchCron();
+	startReconcileFcmTokensCron();
 
 	handleServerClose(server);
 } catch (err) {

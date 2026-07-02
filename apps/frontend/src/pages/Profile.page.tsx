@@ -5,6 +5,7 @@ import { Box } from "@connected-repo/ui-mui/layout/Box";
 import { Card } from "@connected-repo/ui-mui/layout/Card";
 import { Container } from "@connected-repo/ui-mui/layout/Container";
 import { Stack } from "@connected-repo/ui-mui/layout/Stack";
+import { NotificationSettings } from "@frontend/components/notifications/NotificationSettings";
 import { useSessionInfo } from "@frontend/contexts/UserContext";
 import { useWorkspace } from "@frontend/contexts/WorkspaceContext";
 import CreateTeamDialog from "@frontend/modules/teams/components/CreateTeamDialog";
@@ -155,6 +156,8 @@ export default function ProfilePage() {
 						})}
 					</Stack>
 				</Card>
+
+				<NotificationSettings />
 			</Stack>
 
 			<CreateTeamDialog open={createOpen} onClose={() => setCreateOpen(false)} />

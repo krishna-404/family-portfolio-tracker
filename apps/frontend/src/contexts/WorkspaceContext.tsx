@@ -4,6 +4,7 @@ import {
 } from "@frontend/utils/active_team_wiped.channel";
 import type { UserAppBackendOutputs } from "@frontend/utils/orpc.client";
 import { orpc } from "@frontend/utils/orpc.tanstack.client";
+import { syncPushIfGranted } from "@frontend/utils/push.utils";
 import { signout } from "@frontend/utils/signout.utils";
 import { switchGate } from "@frontend/utils/switch_gate";
 import {
@@ -88,6 +89,16 @@ export function WorkspaceProvider({
 		if (!userId) return;
 		void initSyncForUser(userId, activeTeamAppId);
 	}, [userId, activeTeamAppId]);
+
+	// Silent FCM registration on login. NEVER prompts for permission —
+	// browsers permanently disable Notification.requestPermission() for
+	// the origin if the user dismisses a bad prompt once. The user-gesture
+	// version (promptAndRegisterPush) lives behind explicit UI: the
+	// post-first-entry modal, the profile toggle, or the dashboard banner.
+	useEffect(() => {
+		if (!userId) return;
+		void syncPushIfGranted();
+	}, [userId]);
 
 	const setActiveTeamMutation = useMutation(
 		orpc.teams.setActiveTeam.mutationOptions({

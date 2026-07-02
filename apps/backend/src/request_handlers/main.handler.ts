@@ -1,5 +1,6 @@
 import { env, isDev } from "@backend/configs/env.config";
 import { betterAuthHandler } from "@backend/request_handlers/better_auth.handler";
+import { novuHandler } from "@backend/request_handlers/novu.handler";
 import { openApiHandler } from "@backend/request_handlers/open_api.handler";
 import { superAdminHandler } from "@backend/request_handlers/super_admin.handler";
 import { reactAppHandler } from "@backend/request_handlers/user_app.handler";
@@ -64,6 +65,12 @@ export async function mainRequestDispatcher(
 		// 3. Auth Routes (/api/auth/*)
 		if (requestUrl?.startsWith("/api/auth")) {
 			return await betterAuthHandler.handle(req, res);
+		}
+
+		// 3b. Novu Framework bridge (/api/novu/*) — used by `npx novu sync`
+		// to discover code-defined workflows in apps/backend/src/novu/.
+		if (requestUrl?.startsWith("/api/novu")) {
+			return await novuHandler.handle(req, res);
 		}
 
 		// 4. Root Path / Health Check

@@ -1,4 +1,6 @@
-import { isDev } from '@frontend/configs/env.config';
+import { env, isDev } from '@frontend/configs/env.config';
+import { initializeApp } from 'firebase/app';
+import { getMessaging, onBackgroundMessage } from 'firebase/messaging/sw';
 import { cleanupOutdatedCaches, createHandlerBoundToURL, precacheAndRoute } from 'workbox-precaching';
 import { NavigationRoute, registerRoute } from 'workbox-routing';
 
@@ -40,6 +42,65 @@ try {
     console.debug('[SW] NavigationRoute skipped in dev mode (standard behavior).');
   }
 }
+
+// ─── Firebase Cloud Messaging — background push handler ─────────────────
+//
+// Runs inside the same SW as Workbox precache + OPFS handlers. Do NOT
+// create a separate firebase-messaging-sw.js file — a second SW at scope
+// `/firebase-messaging-sw.js` would double-register push and race with
+// this worker's `push` handling. The main thread passes THIS registration
+// to `getToken(messaging, { serviceWorkerRegistration })` so Firebase
+// binds its subscription to the worker running below.
+//
+// `onBackgroundMessage` only fires when the tab is NOT focused. When the
+// tab is focused, Firebase suppresses the OS notification and delivers the
+// message via `onMessage` on the main thread (see push.utils.ts).
+if (env.VITE_FIREBASE_API_KEY && env.VITE_FIREBASE_PROJECT_ID && env.VITE_FIREBASE_MESSAGING_SENDER_ID && env.VITE_FIREBASE_APP_ID) {
+  const firebaseApp = initializeApp({
+    apiKey: env.VITE_FIREBASE_API_KEY,
+    authDomain: env.VITE_FIREBASE_AUTH_DOMAIN,
+    projectId: env.VITE_FIREBASE_PROJECT_ID,
+    messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+    appId: env.VITE_FIREBASE_APP_ID,
+  });
+  const messaging = getMessaging(firebaseApp);
+
+  onBackgroundMessage(messaging, (payload) => {
+    // Novu FCM provider maps the workflow's push step to `payload.notification`
+    // (title/body) and any custom fields to `payload.data`. Some browsers auto-
+    // render `notification` payloads without hitting this handler; we still
+    // call showNotification here so the click URL from `data.url` is applied.
+    const title = payload.notification?.title ?? payload.data?.title ?? 'Notification';
+    const body = payload.notification?.body ?? payload.data?.body ?? '';
+    const url = payload.data?.url ?? payload.fcmOptions?.link ?? '/';
+    void self.registration.showNotification(title, {
+      body,
+      icon: '/pwa-192x192.png',
+      badge: '/pwa-192x192.png',
+      data: { url },
+      tag: payload.messageId,
+    });
+  });
+}
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = (event.notification.data as { url?: string } | undefined)?.url ?? '/';
+  event.waitUntil(
+    (async () => {
+      const targetUrl = new URL(url, self.location.origin).href;
+      const clientsList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      for (const client of clientsList) {
+        if (client.url === targetUrl && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      if (self.clients.openWindow) {
+        return self.clients.openWindow(targetUrl);
+      }
+    })(),
+  );
+});
 
 // ─── OPFS virtual-media fetch handler ───────────────────────────────────
 //

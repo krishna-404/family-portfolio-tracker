@@ -27,9 +27,13 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import type { Resolver } from "react-hook-form";
 import { ulid } from "ulid";
+import { NotificationPermissionDialog } from "./notifications/NotificationPermissionDialog";
 import { SmartMediaUploader } from "./SmartMediaUploader";
 
 type WritingMode = "prompted" | "free";
+
+const INITIAL_PROMPT_SHOWN_KEY = "push.initialPromptShown";
+const OPTED_OUT_KEY = "push.optedOut";
 
 export function CreateJournalEntryForm() {
 	const teamId = useActiveTeamId();
@@ -37,6 +41,7 @@ export function CreateJournalEntryForm() {
 	const [success, setSuccess] = useState("");
 	const [writingMode, setWritingMode] = useState<WritingMode>("prompted");
 	const [attachments, setAttachments] = useState<MediaFile[]>([]);
+	const [showNotifDialog, setShowNotifDialog] = useState(false);
 
 	// Random prompt query — refetch returns a new random pick from the backend.
 	const {
@@ -138,6 +143,23 @@ export function CreateJournalEntryForm() {
 
 				setSuccess("Journal entry created successfully!");
 				setTimeout(() => setSuccess(""), 5000);
+
+				// Post-first-entry notification prompt. Only fires when we've
+				// never asked before AND the browser permission is still in
+				// the "default" state (never touched). If the user has opted
+				// out from a previous session, don't re-nag.
+				const alreadyShown =
+					localStorage.getItem(INITIAL_PROMPT_SHOWN_KEY) === "true";
+				const optedOut = localStorage.getItem(OPTED_OUT_KEY) === "true";
+				if (
+					!alreadyShown &&
+					!optedOut &&
+					typeof Notification !== "undefined" &&
+					Notification.permission === "default"
+				) {
+					localStorage.setItem(INITIAL_PROMPT_SHOWN_KEY, "true");
+					setShowNotifDialog(true);
+				}
 			} catch (error) {
 				console.error("[CreateJournalEntryForm] Create failed:", error);
 				formMethods.setError("root.unexpected", {
@@ -388,6 +410,11 @@ export function CreateJournalEntryForm() {
 			</RhfFormProvider>
 
 			<SuccessAlert message={success} />
+
+			<NotificationPermissionDialog
+				open={showNotifDialog}
+				onClose={() => setShowNotifDialog(false)}
+			/>
 		</Box>
 	);
 }

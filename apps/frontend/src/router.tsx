@@ -2,9 +2,9 @@ import { LoadingSpinner } from "@connected-repo/ui-mui/components/LoadingSpinner
 import { Box } from "@connected-repo/ui-mui/layout/Box";
 import { CustomErrorBoundary } from "@frontend/components/error_fallback";
 import { AppLayout } from "@frontend/components/layout/AppLayout";
+import { RootLayout } from "@frontend/components/layout/RootLayout";
 import { authLoader } from "@frontend/utils/auth.loader";
 import * as Sentry from "@sentry/react";
-import { lazy } from "react";
 import { createBrowserRouter, type RouteObject, redirect } from "react-router";
 
 type NavbarFields = {
@@ -31,9 +31,19 @@ const HydrateFallback = () => (
 	</Box>
 );
 
+// react-router `lazy` route property: the router awaits the chunk before
+// swapping the page, so `useNavigation().state` is "loading" during the fetch
+// (which drives the TopProgressBar) instead of React.lazy's blank-Suspense flash.
+const lazyRoute = (importer: () => Promise<{ default: React.ComponentType }>) =>
+	async () => {
+		const mod = await importer();
+		return { Component: mod.default };
+	};
+
 const routerObjectWithNavbar: ReactRouterWithNavbar[] = [
 	{
 		path: "/",
+		Component: RootLayout,
 		errorElement: <CustomErrorBoundary />,
 		hydrateFallbackElement: <HydrateFallback />,
 		children: [
@@ -43,7 +53,7 @@ const routerObjectWithNavbar: ReactRouterWithNavbar[] = [
 			},
 			{
 				path: "auth/*",
-				Component: lazy(() => import("@frontend/modules/auth/auth.router")),
+				lazy: lazyRoute(() => import("@frontend/modules/auth/auth.router")),
 			},
 			// Authenticated routes with AppLayout
 			{
@@ -52,19 +62,19 @@ const routerObjectWithNavbar: ReactRouterWithNavbar[] = [
 				children: [
 					{
 						path: "dashboard",
-						Component: lazy(() => import("@frontend/pages/Dashboard.page")),
+						lazy: lazyRoute(() => import("@frontend/pages/Dashboard.page")),
 					},
 					{
 						path: "journal-entries/*",
-						Component: lazy(() => import("@frontend/modules/journal-entries/journal-entries.router")),
+						lazy: lazyRoute(() => import("@frontend/modules/journal-entries/journal-entries.router")),
 					},
 					{
 						path: "teams/*",
-						Component: lazy(() => import("@frontend/modules/teams/teams.router")),
+						lazy: lazyRoute(() => import("@frontend/modules/teams/teams.router")),
 					},
 					{
 						path: "profile",
-						Component: lazy(() => import("@frontend/pages/Profile.page")),
+						lazy: lazyRoute(() => import("@frontend/pages/Profile.page")),
 					},
 				],
 			},

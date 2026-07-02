@@ -51,7 +51,7 @@ Building a **Scheduled Prompt & Journal** app with:
 9. **User Schedules (P0):** Schedule management for timed notifications
 10. **Email Notifications (P0):** Event-driven daily prompt emails (after user schedules)
 11. **Capacitor Setup (P0):** iOS/Android native app configuration
-12. **Push Notifications (P0):** FCM/APNs setup and event-driven push notifications
+12. ~~**Push Notifications (P0):** FCM/APNs setup and event-driven push notifications~~ ✅ COMPLETED
 13. **Mobile CI/CD (P0):** GitHub Actions for Android/iOS builds and store uploads
 14. **Payments & Subscriptions (P0):** Stripe integration ($5/month, $50/year)
 15. **Offline-First (V1):** ✅ COMPLETED - IndexedDB with Dexie.js, file attachments with offline storage, sync orchestrator for media uploads, unified AppWorker with CDN/DB operations, offline/online indicators with SSE-based sync, Orchid ORM sync hooks for real-time delta push.
@@ -667,9 +667,9 @@ cron.schedule('* * * * *', async () => {
 
 ---
 
-### Phase 7: Push Notification Setup 🔔
+### Phase 7: Push Notification Setup 🔔 ✅ COMPLETED
 
-**Priority:** HIGH - Native push notifications (do AFTER Capacitor)
+**Status:** ✅ COMPLETED - FCM tokens tracked and synchronized to Novu using optimistic DB-first logic.
 
 #### Epic 7.1: Push Notification Infrastructure
 

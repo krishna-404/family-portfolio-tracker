@@ -1,0 +1,101 @@
+import { env } from "@backend/configs/env.config";
+import { novuWorkflows } from "@backend/novu/workflows";
+import { logger } from "@backend/utils/logger.utils";
+import { Client, NovuRequestHandler } from "@novu/framework";
+import type {
+	NodeHttpRequest,
+	NodeHttpResponse,
+} from "@orpc/standard-server-node";
+
+const readBody = async (req: NodeHttpRequest): Promise<unknown> => {
+	const chunks: Buffer[] = [];
+	for await (const chunk of req) {
+		chunks.push(chunk as Buffer);
+	}
+	if (chunks.length === 0) return undefined;
+	const raw = Buffer.concat(chunks).toString("utf-8");
+	try {
+		return JSON.parse(raw);
+	} catch {
+		return raw;
+	}
+};
+
+/**
+ * Bridge endpoint for the Novu CLI (`npx novu@latest sync --bridge-url ...`)
+ * to discover and preview code-defined workflows in apps/backend/src/novu/.
+ *
+ * Framework ships adapters for Express/Next/Nest/etc. — none for raw Node
+ * HTTP — so we build the adapter inline against NovuRequestHandler's
+ * documented handler shape.
+ *
+ * Not required at runtime for workflow execution: once `novu sync` publishes
+ * the workflows, Novu calls back to this bridge only when previewing steps
+ * from the dashboard. Safe to disable in prod behind an env gate if you
+ * only sync from a build/CI environment.
+ */
+// Real Client instance — must have live method bindings (addWorkflows,
+// addAgents, executeWorkflow, etc.). Passing a plain object here would fail
+// at first request with "this.client.addAgents is not a function".
+const novuClient = new Client({
+	secretKey: env.NOVU_SECRET_KEY,
+	apiUrl: env.NOVU_API_URL,
+	// The bridge is behind /api/novu on our own host; loosen strictAuthentication
+	// so the initial `novu sync` handshake doesn't 401 before the Secret Key
+	// round-trip is set up.
+	strictAuthentication: false,
+});
+
+const requestHandler = new NovuRequestHandler({
+	frameworkName: "node-http",
+	workflows: novuWorkflows,
+	client: novuClient,
+	handler: (req: NodeHttpRequest, res: NodeHttpResponse) => {
+		let bodyPromise: Promise<unknown> | null = null;
+		return {
+			body: () => {
+				if (!bodyPromise) bodyPromise = readBody(req);
+				return bodyPromise;
+			},
+			headers: (key: string) => {
+				const v = req.headers[key.toLowerCase()];
+				return Array.isArray(v) ? v[0] : v;
+			},
+			method: () => req.method || "GET",
+			url: () => {
+				const host = req.headers.host || "localhost";
+				const protocol = req.headers["x-forwarded-proto"] || "http";
+				return new URL(req.url || "/", `${protocol}://${host}`);
+			},
+			queryString: (key: string, url: URL) => url.searchParams.get(key),
+			transformResponse: ({ body, headers, status }) => {
+				for (const [k, v] of Object.entries(headers)) {
+					res.setHeader(k, v);
+				}
+				res.statusCode = status;
+				res.end(body);
+			},
+		};
+	},
+});
+
+const nodeHandler = requestHandler.createHandler();
+
+export const novuHandler = {
+	handle: async (req: NodeHttpRequest, res: NodeHttpResponse) => {
+		try {
+			await nodeHandler(req, res);
+		} catch (err) {
+			logger.error({ err, url: req.url }, "Novu bridge handler failed");
+			if (!res.writableEnded) {
+				res.statusCode = 500;
+				res.end(
+					JSON.stringify({
+						error: "Novu bridge error",
+						message: err instanceof Error ? err.message : String(err),
+					}),
+				);
+			}
+		}
+	},
+};
