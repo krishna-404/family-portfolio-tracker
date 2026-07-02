@@ -1,6 +1,12 @@
 import { NODE_ENV_ZOD } from "@connected-repo/zod-schemas/node_env";
 import { object, preprocess, string, url } from "zod";
 
+const optionalString = preprocess(
+	(val) => (val === "" ? undefined : val),
+	string().optional(),
+);
+const optionalUrl = preprocess((val) => (val === "" ? undefined : val), url().optional());
+
 export const envSchemaZod = object({
 	VITE_USER_NODE_ENV: NODE_ENV_ZOD,
 	VITE_API_URL: url("API URL must be a valid URL"),
@@ -12,4 +18,15 @@ export const envSchemaZod = object({
 	VITE_SENTRY_RELEASE: string().optional(),
 	VITE_SENTRY_ORG: string().optional(),
 	VITE_SENTRY_PROJECT: string().optional(),
+	// Novu — Inbox connects the browser directly to Novu; empty = notification UI hidden.
+	VITE_NOVU_APP_IDENTIFIER: optionalString,
+	VITE_NOVU_API_URL: optionalUrl,
+	VITE_NOVU_SOCKET_URL: optionalString,
+	// Firebase Web (for FCM push) — empty = push disabled, other channels still work.
+	VITE_FIREBASE_API_KEY: optionalString,
+	VITE_FIREBASE_AUTH_DOMAIN: optionalString,
+	VITE_FIREBASE_PROJECT_ID: optionalString,
+	VITE_FIREBASE_MESSAGING_SENDER_ID: optionalString,
+	VITE_FIREBASE_APP_ID: optionalString,
+	VITE_FIREBASE_VAPID_KEY: optionalString,
 });

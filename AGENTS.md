@@ -19,8 +19,8 @@
 
 ## Layer 2: Active Task
 - **Objective**: Standardize and restore robust boilerplate patterns (Plan 005).
-- **Status**: In Progress.
-- **Context**: Restoring advanced architectural patterns (Hybrid Auth, Smart CSRF, Bimodal Docs, Worker Isolation) identified from `recent-changes.md` to ensure the OneQ boilerplate is production-ready.
+- **Status**: Completed.
+- **Context**: Restored advanced architectural patterns including Novu Push Notifications, FCM synchronization, and UI progress indicators. Ready for the next phase of development.
 
 ## Layer 3: Decision Records
 
@@ -38,6 +38,7 @@
 | [ADR-010] | Token Bucket Rate Limiting | Accepted | Use an optimistic locking Token Bucket in Postgres to prevent table bloat and eliminate background cleanup cron jobs. |
 | [ADR-011] | Pull Bundles Renaming | Accepted | Rename sync table procedures from `pullDelta` to `pullBundles`. |
 | [ADR-012] | Backend Security Hardening | Accepted | Implementing strict SSRF guards, dummy hashes for timing attacks, and strict teamId scoping for multitenant safety. |
+| [ADR-013] | Novu Push Notifications | Accepted | Implemented FCM token synchronization and notification dispatch using Novu with optimistic DB-first tracking. |
 
 ## Quick Reference
 - **Dev**: `yarn dev`

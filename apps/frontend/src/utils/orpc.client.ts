@@ -90,6 +90,13 @@ const link = new RPCLink<ClientContext>({
 
 export const orpcFetch: UserAppRouter = createORPCClient(link);
 
+// Dev-only console helper. Lets you drive any oRPC endpoint from browser
+// DevTools while iterating on features. Example:
+//   await __orpc.notifications.testSendPush({ title: 'Hi', body: 'test' })
+if (import.meta.env.DEV && typeof window !== 'undefined') {
+  (window as unknown as { __orpc: UserAppRouter }).__orpc = orpcFetch;
+}
+
 /**
  * @public
  */

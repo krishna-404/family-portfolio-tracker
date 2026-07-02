@@ -9,8 +9,8 @@
 import { LoadingSpinner } from "@connected-repo/ui-mui/components/LoadingSpinner";
 import { ThemeContextProvider, useThemeMode } from "@connected-repo/ui-mui/theme/ThemeContext";
 import { CustomErrorBoundary } from "@frontend/components/error_fallback";
+import { PwaInstallHost } from "@frontend/components/notifications/PwaInstallHost";
 import { router } from "@frontend/router";
-import { usePWAInstall } from "@frontend/sw/usePwaInstall.sw";
 import { LocalizationProvider } from "@mui/x-date-pickers";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import { ErrorBoundary } from "@sentry/react";
@@ -49,9 +49,6 @@ function ToastProvider() {
 }
 
 function App() {
-
-	usePWAInstall();
-	
 	return (
 		<LocalizationProvider dateAdapter={AdapterDayjs}>
 			<ThemeContextProvider>
@@ -62,8 +59,10 @@ function App() {
 							scope.setTag("level", "top-level");
 						}}
 					>
-						<RouterProvider router={router} />
-						<ToastProvider />
+						<PwaInstallHost>
+							<RouterProvider router={router} />
+							<ToastProvider />
+						</PwaInstallHost>
 					</ErrorBoundary>
 				</Suspense>
 			</ThemeContextProvider>

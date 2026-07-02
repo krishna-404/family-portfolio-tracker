@@ -8,6 +8,7 @@ import { BottomNavigation } from "@connected-repo/ui-mui/navigation/BottomNaviga
 import { BottomNavigationAction } from "@connected-repo/ui-mui/navigation/BottomNavigationAction";
 import { Toolbar } from "@connected-repo/ui-mui/navigation/Toolbar";
 import { UserProfileMenu } from "@frontend/components/layout/UserProfileMenu";
+import { NovuInbox } from "@frontend/components/notifications/NovuInbox";
 import { navItems } from "@frontend/configs/nav.config";
 import { useWorkspace } from "@frontend/contexts/WorkspaceContext";
 import { useLocation, useNavigate } from "react-router";
@@ -127,6 +128,7 @@ export const MobileNavbar = () => {
 						</Stack>
 					</Box>
 
+					<NovuInbox />
 					<UserProfileMenu />
 				</Toolbar>
 			</AppBar>

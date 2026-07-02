@@ -1,6 +1,5 @@
 import { Box } from "@connected-repo/ui-mui/layout/Box";
 import { useThemeMode } from "@connected-repo/ui-mui/theme/ThemeContext";
-import { PwaInstallPrompt } from "@frontend/components/pwa/install_prompt.pwa";
 import { PwaUpdatePrompt } from "@frontend/components/pwa/update_prompt.pwa";
 import type { SessionInfo } from "@frontend/contexts/UserContext";
 import { userContext, useSessionInfo } from "@frontend/contexts/UserContext";
@@ -93,7 +92,6 @@ export const AppLayout = () => {
 						}}
 					>
 						<AppLayoutContent />
-						<PwaInstallPrompt />
 						<PwaUpdatePrompt />
 					</Box>
 				</Box>

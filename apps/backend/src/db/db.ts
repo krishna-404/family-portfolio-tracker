@@ -6,6 +6,7 @@ import { PgTbusTaskLogTable } from "@backend/modules/events/tables/pg_tbus_task_
 import { FileTable } from "@backend/modules/files/tables/files.table";
 import { JournalEntryTable } from "@backend/modules/journal-entries/tables/journal_entries.table";
 import { ApiProductRequestLogsTable } from "@backend/modules/logs/tables/api_product_request_logs.table";
+import { PushDeviceTable } from "@backend/modules/notifications/tables/push_devices.table";
 import { PromptsTable } from "@backend/modules/prompts/tables/prompts.table";
 import { SubscriptionsTable } from "@backend/modules/subscriptions/tables/subscriptions.table";
 import { FeatureFlagTable } from "@backend/modules/system/tables/feature_flags.table";
@@ -41,6 +42,7 @@ export const db = orchidORM(
 		pgTbusTaskLogs: PgTbusTaskLogTable,
 		featureFlags: FeatureFlagTable,
 		rateLimits: RateLimitTable,
+		pushDevices: PushDeviceTable,
 	},
 );
 

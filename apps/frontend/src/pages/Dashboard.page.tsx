@@ -7,12 +7,14 @@ import { Box } from "@connected-repo/ui-mui/layout/Box";
 import { Card } from "@connected-repo/ui-mui/layout/Card";
 import { Container } from "@connected-repo/ui-mui/layout/Container";
 import { Stack } from "@connected-repo/ui-mui/layout/Stack";
+import { NotificationBanner } from "@frontend/components/notifications/NotificationBanner";
 import { useSessionInfo } from "@frontend/contexts/UserContext";
 import { useActiveTeamId, useWorkspace } from "@frontend/contexts/WorkspaceContext";
 import { orpc } from "@frontend/utils/orpc.tanstack.client";
 import BusinessIcon from "@mui/icons-material/Business";
 import PersonIcon from "@mui/icons-material/Person";
 import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { useNavigate } from "react-router";
 
 const DashboardPage = () => {
@@ -23,11 +25,26 @@ const DashboardPage = () => {
 	const teamId = useActiveTeamId();
 
 	// Pull the live count of entries from the backend.
-	const { data: entries = [] } = useQuery({
+	const { data: entries, isLoading: entriesLoading } = useQuery({
 		...orpc.journalEntries.getAll.queryOptions(),
 		enabled: !!teamId,
 	});
-	const entryCount = entries.length;
+	const entryCount = entries?.length ?? 0;
+
+	// First-run redirect: a signed-in user with zero entries lands on the
+	// entry-add page instead of the empty dashboard. Once they create one,
+	// this stays out of their way. The `replace: true` keeps the browser
+	// history clean so Back doesn't loop them back here.
+	useEffect(() => {
+		if (!teamId) return;
+		if (entriesLoading) return;
+		if (entries && entries.length === 0) {
+			navigate("/journal-entries/new", { replace: true });
+		}
+	}, [teamId, entriesLoading, entries, navigate]);
+
+	// Avoid a one-frame flash of the empty dashboard before the effect fires.
+	if (!entriesLoading && entries && entries.length === 0) return null;
 
 	return (
 		<Box
@@ -40,6 +57,8 @@ const DashboardPage = () => {
 			<Container maxWidth="lg">
 				<Fade in timeout={400}>
 					<Stack spacing={4}>
+						<NotificationBanner />
+
 						{/* Welcome Header */}
 						<Card
 							sx={{

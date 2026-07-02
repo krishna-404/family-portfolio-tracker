@@ -1,10 +1,12 @@
 import {
 	subscriptionAlertWebhookTaskDef,
 	userCreatedEventDef,
+	userDeletedEventDef,
 	userReminderTaskDef,
 } from "@backend/events/events.schema";
 import { reminderNotificationJournalEntryHandler } from "@backend/modules/journal-entries/notifications/reminder.notifications.journal_entries";
 import { userCreatedNotificationHandler } from "@backend/modules/users/notifications/user_created.notifications.user";
+import { userDeletedNotificationHandler } from "@backend/modules/users/notifications/user_deleted.notifications.user";
 import { subscriptionAlertWebhookHandler } from "@backend/modules/webhook_calls/handlers/subscription_alert_webhook.handler";
 import { captureBackendException } from "@backend/utils/backend-error-tracking.utils";
 import { logger } from "@backend/utils/logger.utils";
@@ -43,6 +45,14 @@ export const startEventBus = (): Promise<void> => {
 					task_name: "user.created",
 					eventDef: userCreatedEventDef,
 					handler: userCreatedNotificationHandler,
+				}),
+			);
+
+			tbus.registerHandler(
+				createEventHandler({
+					task_name: "user.deleted",
+					eventDef: userDeletedEventDef,
+					handler: userDeletedNotificationHandler,
 				}),
 			);
 

@@ -1,4 +1,6 @@
 import type { Server } from "node:http";
+import { stopReconcileFcmTokensCron } from "@backend/cron_jobs/reconcile_fcm_tokens.cron";
+import { stopReminderDispatchCron } from "@backend/cron_jobs/reminder_dispatch.cron";
 import { db } from "@backend/db/db";
 import { getTbusStartPromise } from "@backend/events/events.utils";
 import { tbus } from "@backend/events/tbus";
@@ -95,6 +97,9 @@ export const handleServerClose = (server: Server) => {
 					new Promise<void>((resolve) => setTimeout(resolve, 5000)),
 				]);
 			}
+
+			stopReminderDispatchCron();
+			stopReconcileFcmTokensCron();
 
 			await tbus.stop().catch((error) => {
 				logger.error({ err: error }, "Error stopping pg-tbus event bus");
@@ -223,7 +228,13 @@ export const handleServerClose = (server: Server) => {
 			level: "error",
 			tags: { error_type: "unhandled_rejection" },
 		});
-		logger.error({ reason, promise }, "Unhandled rejection");
+		// Log via the `err` key so pino's default error serializer captures
+		// message/stack instead of stripping to just `code`. Keep `reason`
+		// as an extra key for anyone piping raw JSON.
+		logger.error(
+			{ err: reason instanceof Error ? reason : new Error(String(reason)), reason, promise },
+			"Unhandled rejection",
+		);
 		forceShutdown();
 		gracefulShutdown("unhandledRejection");
 	});

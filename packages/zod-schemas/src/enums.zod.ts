@@ -58,3 +58,35 @@ export const TABLES_TO_SYNC_ENUM = [
 ] as const;
 export const tablesToSyncZod = z.enum(TABLES_TO_SYNC_ENUM);
 export type TablesToSync = z.infer<typeof tablesToSyncZod>;
+
+// Device platform reported by the frontend at push-register time.
+// Broad enough to cover every OS a Web Push subscription can originate
+// from, with `other` as a catchall so unknown UAs don't fail validation.
+// Extend as new platforms show up (visionos, harmonyos, fireos, etc.).
+export const DEVICE_PLATFORM_ENUM = [
+	"ios",
+	"android",
+	"macos",
+	"windows",
+	"linux",
+	"chromeos",
+	"other",
+] as const;
+export const devicePlatformZod = z.enum(DEVICE_PLATFORM_ENUM);
+export type DevicePlatform = z.infer<typeof devicePlatformZod>;
+
+// Why a push_devices row was soft-deleted. Separates voluntary churn
+// (user toggled off / logged out) from involuntary (upstream pruned).
+// Extend as new detachment paths land (e.g. "browser_rotated" when we
+// handle pushsubscriptionchange server-side).
+export const DEVICE_DEACTIVATION_REASON_ENUM = [
+	"user_revoked",
+	"novu_pruned",
+	"subscriber_deleted",
+] as const;
+export const deviceDeactivationReasonZod = z.enum(
+	DEVICE_DEACTIVATION_REASON_ENUM,
+);
+export type DeviceDeactivationReason = z.infer<
+	typeof deviceDeactivationReasonZod
+>;
