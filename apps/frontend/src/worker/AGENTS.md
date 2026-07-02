@@ -1,42 +1,75 @@
-# 🤖 Worker Architecture Guidelines
+# Web Worker Architecture
 
-The application uses TWO dedicated web workers to maintain UI responsiveness and domain isolation.
+The frontend runs **two dedicated web workers**, both exposed to the main thread
+via Comlink through `worker.proxy.ts` (`getDataProxy()`, `getMediaProxy()`). The
+main thread never spawns workers elsewhere.
 
-### 1. The Data Worker (`data.worker.ts`)
-- **Role**: Source of truth for all local data and synchronization.
-- **State**: HOLDER of the Dexie.js database instance.
-- **Responsibilities**:
-  - Managing all local IndexedDB persistence via Dexie.
-  - Orchestrating the background `SyncOrchestrator`. See [Detailed Sync Logic](file:///Users/krishna404/codeProjects/shipmyapp/connected-repo/apps/frontend/src/worker/sync/SYNC_LOGIC.md).
-  - Managing real-time SSE event subscriptions and heartbeats.
-- **Strict Rule**: This is the ONLY worker allowed to access the database.
+## DataWorker (`data.worker.ts`)
+Stateful. Owns the per-user Dexie DB and the sync engine.
 
-### 2. The Media Worker (`media.worker.ts`)
-- **Role**: High-performance content processing and networking.
-- **State**: **STATELESS**. Does not have access to the database.
-- **Responsibilities**:
-  - PDF rendering (using `pdfjs-dist`).
-  - Video frame extraction (using `mp4box` and `VideoDecoder`).
-  - Image compression (using `browser-image-compression`).
-  - CDN uploads (using `Axios`).
-  - Data export (CSV and PDF generation via `ExportService`).
-- **Strict Rule**: Must return processed results (Blobs/URLs) to the caller. It never persists data directly.
+- **DB**: `initDb(userId)` opens `dbNameFor(userId)` and drops any other user's
+  DB on this device. Module DB adapters (`journal-entries`, `prompts`,
+  `teamsApp`, `teamMembers`, `files`, `syncMetadata`) throw until this
+  completes.
+- **SyncOrchestrator** (`sync/sync.orchestrator.ts`): pull-delta protocol per
+  table with a wave-1 anchor:
+  1. `teamsApp` (anchor — mints `topLevelSyncedAt`) →
+  2. `teamMembers` → `prompts` → `journalEntries` → `files` (pull pipeline).
+  3. Push pipeline (parallel with pull): `pushJournalEntryCreates` then
+     `pushFileCdnUpdates`.
+  Cursors are per-`(table, teamId)`. Cycles capture `expectedUserId` +
+  `expectedTeamId` and abort writes if either flips mid-cycle to protect the
+  old team's cursor.
+- **Trigger sources inside the worker**:
+  - Dexie `subscribe()` DB-write callback (post-write kick).
+  - `self.addEventListener("online", ...)`.
+  - 60s interval safety net.
+  Additional triggers arrive from the main thread via `sync-triggers.ts`
+  (`visibilitychange`, `focus`, `online`, 60s interval, post-mutation kicks).
+- **FileUploadWorker** (`sync/file_upload.worker.ts`): sole CDN upload
+  path — both online-picked and offline-picked files go through
+  `filesDb.upsertLocal` (which writes the blob to OPFS) and are drained
+  here. Per-layer state machine (`main` + `thumbnail`) reads blobs from
+  OPFS, hands the source blob to the MediaWorker only for thumbnail
+  *generation*, and PUT-s to the CDN via presigned URLs directly in the
+  DataWorker realm (no Comlink hop for the raw bytes). Retries with
+  backoff `[1, 2, 4, 8, 16]s`, max 5 attempts, `MAX_CONCURRENT = 3`.
+  Runs alongside every sync cycle.
+- **Active-team cache** (`sync/active_team.ts`): pushed in from the main
+  thread; used by the ORPC client's `x-team-id` header hook. No `x-team-id` =
+  backend rejects with "Active team id mismatch."
 
----
+## MediaWorker (`media.worker.ts`)
+Stateless. Off-main-thread media processing (no CDN networking).
 
-### 🟢 Active Task: Storage Persistence & Protection (002)
-- **Status**: ✅ COMPLETED
-- **Intent**: Ensure "Pending Sync" data durability via OPFS and Background Sync.
-- **Context**: Moved large blobs to OPFS to avoid IDB eviction and added W3C Background Sync for reliability.
+- Image thumbnail generation (`browser-image-compression`).
+- PDF thumbnail rendering (`pdfjs-dist`).
+- Returns derived thumbnail Blobs to the caller — never persists, never
+  uploads. The DataWorker's `FileUploadWorker` handles the actual PUT
+  to the CDN so raw source blobs never cross a Comlink boundary.
+- Has its OWN copy of `active_team.ts` (separate realm), seeded by the main
+  thread on spawn and on team switch. `getMediaProxy()` awaits the seed before
+  resolving so any future RPC out of this worker starts with the right
+  `x-team-id`.
 
-### Decision Records
+Video thumbnails still run on the main thread (`utils/thumbnail-video-ui.ts`)
+because `VideoDecoder` / `<video>` require a DOM-backed runtime.
 
-| ID | Title | Status | Description |
-|---|---|---|---|
-| 001 | Use OPFS for Attachments | Decided | Move binary blobs from IndexedDB to OPFS to prevent browser eviction and improve performance. |
-| 002 | W3C Background Sync | Decided | Register sync tags in SW to trigger DataWorker sync cycles even after tab closure. |
-| 003 | SHA-256 Checksums | Decided | Store local checksums to verify integrity before/after OPFS operations and during sync. |
-| 004 | Virtual Media Provider | Decided | Serve OPFS media via Service Worker fetch interception to avoid avoid `URL.createObjectURL` overhead. |
+## Cross-worker bridge
+The main thread bridges the MediaWorker proxy into the DataWorker via
+`dataProxy.setMediaProxy(...)`. Inside the DataWorker, `worker.context.ts`
+holds this proxy in a `ProxyCell` — the `FileUploadWorker` awaits it
+only for thumbnail generation (the CDN PUT itself is direct, in the
+DataWorker realm). A sync trigger arriving before wiring completes
+pends instead of crashing.
 
-> [!IMPORTANT]
-> Always maintain this separation. Do not add database dependencies to the Media Worker. If the Media Worker needs data from the DB, it must be passed as an argument from the Data Worker.
+## Lifecycle
+- Main thread instantiates both workers lazily on first `getDataProxy()` /
+  `getMediaProxy()`.
+- Login → `initSyncForUser(userId, activeTeamAppId)` (in `utils/sync-triggers.ts`)
+  → seeds the header cache, opens the per-user DB, seeds the active team,
+  installs main-thread triggers.
+- Logout → workers stay alive (same-user re-login is instant); active team
+  cleared everywhere.
+- `tearDownSync()` (tests / hard reset) → `terminateWorkers()`; the on-disk
+  Dexie DB is preserved.

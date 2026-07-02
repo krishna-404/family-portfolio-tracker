@@ -1,21 +1,20 @@
-import { OpenApiAuthContext } from "@backend/procedures/open_api_auth.procedure";
+import type { OpenApiAuthContext } from "@backend/procedures/open_api_auth.procedure";
 import { getClientIpAddress } from "@backend/utils/client-info.utils";
 import { isIPWhitelisted } from "@backend/utils/ipChecker.utils";
-import { MiddlewareNextFn, ORPCError } from "@orpc/server";
+import { type MiddlewareNextFn, ORPCError } from "@orpc/server";
 
 /**
  * IP Whitelist Middleware
  * Checks request IP against team.allowedIPs (exact match or CIDR range, if not empty)
  * Requires apiKeyAuthMiddleware to be run first to attach team to context
  */
-export const ipWhitelistMiddleware = async ({ 
-	context, 
-	next 
-}: { 
-	context: OpenApiAuthContext; 
-	next: MiddlewareNextFn<unknown> 
+export const ipWhitelistMiddleware = async ({
+	context,
+	next,
+}: {
+	context: OpenApiAuthContext;
+	next: MiddlewareNextFn<unknown>;
 }) => {
-
 	const { allowedIPs } = context.teamApi;
 
 	// Check IP whitelist (if configured)

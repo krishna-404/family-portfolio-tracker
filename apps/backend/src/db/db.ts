@@ -8,30 +8,28 @@ import { JournalEntryTable } from "@backend/modules/journal-entries/tables/journ
 import { ApiProductRequestLogsTable } from "@backend/modules/logs/tables/api_product_request_logs.table";
 import { PromptsTable } from "@backend/modules/prompts/tables/prompts.table";
 import { SubscriptionsTable } from "@backend/modules/subscriptions/tables/subscriptions.table";
+import { FeatureFlagTable } from "@backend/modules/system/tables/feature_flags.table";
+import { RateLimitTable } from "@backend/modules/system/tables/rate_limits.table";
 import { TeamMemberTable } from "@backend/modules/teams/tables/team_members.table";
 import { TeamApiTable } from "@backend/modules/teams/tables/teams_api.table";
 import { TeamAppTable } from "@backend/modules/teams/tables/teams_app.table";
 import { UserTable } from "@backend/modules/users/tables/users.table";
-import { OfflineErrorsTable } from "@backend/modules/offline_errors/tables/offline_errors.table";
 import { orchidORM } from "orchid-orm/node-postgres";
-// Phase 0 Complete: All database tables registered
+
 export const db = orchidORM(
 	{
 		...dbConfig,
 		log: false,
 	},
 	{
-		// App sync tables
 		users: UserTable,
 		journalEntries: JournalEntryTable,
 		prompts: PromptsTable,
 		teamsApp: TeamAppTable,
 		teamMembers: TeamMemberTable,
 		files: FileTable,
-		offlineErrors: OfflineErrorsTable,
 
 		// API only
-
 		teamsApi: TeamApiTable,
 		subscriptions: SubscriptionsTable,
 		apiProductRequestLogs: ApiProductRequestLogsTable,
@@ -41,6 +39,8 @@ export const db = orchidORM(
 		accounts: AccountTable,
 		verifications: VerificationTable,
 		pgTbusTaskLogs: PgTbusTaskLogTable,
+		featureFlags: FeatureFlagTable,
+		rateLimits: RateLimitTable,
 	},
 );
 

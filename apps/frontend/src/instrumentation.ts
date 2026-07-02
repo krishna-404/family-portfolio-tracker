@@ -1,5 +1,4 @@
 import { env, isDev } from "@frontend/configs/env.config";
-import * as Sentry from "@sentry/react";
 import { useEffect } from "react";
 import {
   createRoutesFromChildren,
@@ -52,6 +51,10 @@ export async function initInstrumentation() {
     // Enable logs to be sent to Sentry
     enableLogs: true,
     profileLifecycle: "trace",
+    // Also emit W3C `traceparent` on outbound fetches so the backend (and any
+    // downstream) stitches under the vendor-neutral standard, not just Sentry's
+    // own `sentry-trace` header.
+    propagateTraceparent: true,
     tracesSampleRate: isDev ? 0 : 1.0,
     // Set `tracePropagationTargets` to control for which URLs trace propagation should be enabled
     tracePropagationTargets: [
@@ -68,10 +71,13 @@ export async function initInstrumentation() {
 /**
  * Lazily capture a message in Sentry.
  */
-export async function captureSentryMessage(message: string, options?: any) {
+export async function captureSentryMessage(
+  message: string,
+  options?: Parameters<typeof import("@sentry/react").captureMessage>[1],
+) {
   const Sentry = await import("@sentry/react");
   return Sentry.captureMessage(message, options);
-};
+}
 
 /**
  * Lazily set the Sentry user.

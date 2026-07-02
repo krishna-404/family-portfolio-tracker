@@ -1,19 +1,21 @@
-import { Dialog, DialogTitle, DialogContent, DialogActions, TextField, MenuItem, Select, FormControl, InputLabel } from "@mui/material";
 import { Button } from "@connected-repo/ui-mui/form/Button";
-import React, { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import type { TeamMemberRole } from "@connected-repo/zod-schemas/enums.zod";
 import { orpc } from "@frontend/utils/orpc.tanstack.client";
+import { Dialog, DialogActions, DialogContent, DialogTitle, FormControl, InputLabel, MenuItem, Select, TextField } from "@mui/material";
+import { useMutation } from "@tanstack/react-query";
+import type React from "react";
+import { useState } from "react";
 import { toast } from "react-toastify";
-import { TeamMemberRole } from "@connected-repo/zod-schemas/enums.zod";
 
 interface AddMemberDialogProps {
 	open: boolean;
 	onClose: () => void;
 	onSuccess: () => void;
-	teamId: string;
 }
 
-export function AddMemberDialog({ open, onClose, onSuccess, teamId }: AddMemberDialogProps) {
+// `teamId` is derived from the `x-team-id` header on the backend, not sent
+// in the body — see teamAppMemberAddInputZod.
+export function AddMemberDialog({ open, onClose, onSuccess }: AddMemberDialogProps) {
 	const [email, setEmail] = useState("");
 	const [role, setRole] = useState<TeamMemberRole>("Member");
 
@@ -29,7 +31,7 @@ export function AddMemberDialog({ open, onClose, onSuccess, teamId }: AddMemberD
 	const handleSubmit = (e: React.FormEvent) => {
 		e.preventDefault();
 		if (!email) return;
-		mutation.mutate({ teamId, email, role });
+		mutation.mutate({ email, role });
 	};
 
 	return (

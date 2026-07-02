@@ -26,6 +26,7 @@
 | [ADR-B02] | Mutex Cron | Accepted | Prevent concurrent cron runs via `isCronJobRunning` flag. |
 | [ADR-B03] | Soft Delete | Accepted | Mandatory for sync compatibility (use `deletedAt` field). |
 | [ADR-B04] | Files Sync Rationale | Accepted | Use .merge() on create to backup asynchronous metadata. |
+| [ADR-B05] | Backend Hardening | Accepted | Strict SSRF guards on webhooks, dummy hashes for API keys, and server-owned teamId scoping. |
 
 ## Technical Guidelines
 

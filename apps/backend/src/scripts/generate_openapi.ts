@@ -1,5 +1,5 @@
-import { userAppRouter } from "@backend/routers/user_app/user_app.router";
 import { writeFile } from "node:fs/promises";
+import { userAppRouter } from "@backend/routers/user_app/user_app.router";
 import { OpenAPIGenerator } from "@orpc/openapi";
 import { ZodToJsonSchemaConverter } from "@orpc/zod/zod4";
 
@@ -22,13 +22,15 @@ async function generateOpenApi() {
 					type: "http",
 					scheme: "bearer",
 					bearerFormat: "JWT",
-					description: "Better Auth bearer token used by mobile-authenticated routes.",
+					description:
+						"Better Auth bearer token used by mobile-authenticated routes.",
 				},
 				sessionCookie: {
 					type: "apiKey",
 					in: "cookie",
 					name: "__Secure-better-auth.session_token",
-					description: "Better Auth session cookie used by user-authenticated routes.",
+					description:
+						"Better Auth session cookie used by user-authenticated routes.",
 				},
 			},
 		},
@@ -38,7 +40,7 @@ async function generateOpenApi() {
 			},
 			{
 				sessionCookie: [],
-			}
+			},
 		],
 	});
 

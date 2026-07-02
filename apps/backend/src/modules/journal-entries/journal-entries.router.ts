@@ -1,6 +1,5 @@
 import { db } from "@backend/db/db";
-import { z } from "zod";
-import { rpcProtectedProcedure } from "@backend/procedures/protected.procedure";
+import { rpcProtectedActiveTeamProcedure } from "@backend/procedures/protected.procedure";
 import {
 	journalEntryCreateInputZod,
 	journalEntryDeleteZod,
@@ -8,106 +7,157 @@ import {
 	journalEntryGetByUserZod,
 	journalEntrySelectAllZod,
 } from "@connected-repo/zod-schemas/journal_entry.zod";
+import {
+	journalEntryCreateInputWithRelationsZod,
+	journalEntryPullBundlesInputZod,
+	journalEntryPullBundlesOutputZod,
+	journalEntryPushCreatesInputZod,
+	journalEntryPushCreatesOutputZod,
+	journalEntrySelectAllWithRelationsZod,
+} from "@connected-repo/zod-schemas/journal-entries/sync";
 import { userSelectAllZod } from "@connected-repo/zod-schemas/user.zod";
+import { z } from "zod";
+import { pushJournalEntryCreatesService } from "./services/push_creates.journal_entries.service";
+import { pullJournalEntriesService } from "./services/sync.journal_entries.service";
 
-// Get all journal entries for the authenticated user, optionally filtered by team
-const getAll = rpcProtectedProcedure
-	.input(z.object({ teamId: z.ulid().nullable().optional() }))
-	.output(z.array(journalEntrySelectAllZod.extend({ author: userSelectAllZod.optional() })))
-	.handler(async ({ input: { teamId }, context: { user } }) => {
-		const query: any = { authorUserId: user.id };
-		if (teamId !== undefined) {
-			query.teamId = teamId;
-		}
-
-		const journalEntries = await db.journalEntries
+// Get all journal entries for the caller in the active team.
+const getAll = rpcProtectedActiveTeamProcedure
+	.output(
+		z.array(
+			journalEntrySelectAllZod.extend({ author: userSelectAllZod.optional() }),
+		),
+	)
+	.handler(async ({ context: { user, activeTeamId } }) => {
+		return await db.journalEntries
 			.select("*", {
 				author: (t) => t.author.selectAll(),
 			})
-			.where(query);
-
-		return journalEntries;
+			.where({ authorUserId: user.id, teamId: activeTeamId });
 	});
 
-// Get journal entry by ID
-const getById = rpcProtectedProcedure
-	.input(journalEntryGetByIdZod.extend({ teamId: z.ulid().nullable().optional() }))
-	.output(journalEntrySelectAllZod)
-	.handler(async ({ input: { id, teamId }, context: { user } }) => {
-		const query: any = { id, authorUserId: user.id };
-		if (teamId !== undefined) {
-			query.teamId = teamId;
-		}
-
-		const journalEntry = await db.journalEntries
+// Get journal entry by ID (scoped to the active team).
+//
+// Returns the entry with its `files` relation inlined so the caller has
+// the complete detail-view payload in one round-trip. Matches the shape
+// that `create` returns (same schema), keeping the frontend detail page
+// on a single query rather than an entry + files pair.
+const getById = rpcProtectedActiveTeamProcedure
+	.input(journalEntryGetByIdZod)
+	.output(journalEntrySelectAllWithRelationsZod)
+	.handler(async ({ input: { id }, context: { user, activeTeamId } }) => {
+		return await db.journalEntries
 			.find(id)
-			.where(query);
-
-		return journalEntry;
+			.where({ authorUserId: user.id, teamId: activeTeamId })
+			.select("*", {
+				files: (q) => q.files.selectAll(),
+			});
 	});
 
-// Create journal entry
-const create = rpcProtectedProcedure
-	.input(journalEntryCreateInputZod)
-	.output(journalEntrySelectAllZod)
-	.handler(async ({ input, context: { user } }) => {
+// Create journal entry.
+//
+// Accepts the SAME create-with-relations shape as `pushCreates`: parent +
+// optional nested `files: FileCreateInput[]`. This keeps the online and
+// offline write paths structurally identical — the `OnlineFirstAdapter`
+// on the client sends the exact same payload whether it lands here
+// immediately or falls back to the offline queue that flushes via
+// `pushCreates`.
+const create = rpcProtectedActiveTeamProcedure
+	.input(journalEntryCreateInputWithRelationsZod)
+	.output(journalEntrySelectAllWithRelationsZod)
+	.handler(async ({ input, context: { user, activeTeamId } }) => {
+		const { files, ...parent } = input;
 
-		let newJournalEntry = await db.journalEntries.create({
-			...input,
-			authorUserId: user.id,
-		}).onConflictDoNothing();
+		// `teamId` on both parent and nested files is server-owned — pulled
+		// from `activeTeamId` on the auth context, NEVER from the client
+		// input, to prevent tenant-forgery via a spread-in field.
+		await db.journalEntries
+			.create({
+				...parent,
+				authorUserId: user.id,
+				teamId: activeTeamId,
+				...(files?.length
+					? {
+							files: {
+								create: files.map((f) => ({
+									...f,
+									teamId: activeTeamId,
+									tableName: "journalEntries" as const,
+									type: "attachment" as const,
+									createdByUserId: user.id,
+								})),
+							},
+						}
+					: {}),
+			})
+			.onConflictDoNothing("id");
 
-		if (!newJournalEntry) {
-			newJournalEntry = await db.journalEntries.selectAll().find(input.id);
-		}
-
-		return newJournalEntry;
+		// The `files` relation's `on: { tableName: "journalEntries", type: "attachment" }`
+		// filter runs server-side, so this is one query.
+		return await db.journalEntries.find(input.id).select("*", {
+			files: (q) => q.files.selectAll(),
+		});
 	});
 
-// Get journal entries by user
-const getByUser = rpcProtectedProcedure
+// Get journal entries by user, scoped to the caller's active team.
+const getByUser = rpcProtectedActiveTeamProcedure
 	.input(journalEntryGetByUserZod)
-	.output(z.array(journalEntrySelectAllZod.extend({ author: userSelectAllZod.optional() })))
-	.handler(async ({ input }) => {
-		const journalEntries = await db.journalEntries
+	.output(
+		z.array(
+			journalEntrySelectAllZod.extend({ author: userSelectAllZod.optional() }),
+		),
+	)
+	.handler(async ({ input, context: { activeTeamId } }) => {
+		return await db.journalEntries
 			.select("*", {
 				author: (t) => t.author.selectAll(),
 			})
-			.where({ authorUserId: input.authorUserId })
+			.where({ authorUserId: input.authorUserId, teamId: activeTeamId })
 			.order({ createdAt: "DESC" });
-
-		return journalEntries;
 	});
 
 // Update journal entry
-const update = rpcProtectedProcedure
+const update = rpcProtectedActiveTeamProcedure
 	.input(journalEntryCreateInputZod.extend({ id: z.ulid() }))
 	.output(journalEntrySelectAllZod)
-	.handler(async ({ input, context: { user } }) => {
+	.handler(async ({ input, context: { user, activeTeamId } }) => {
 		const { id, ...updates } = input;
-		
-		const updatedJournalEntry = await db.journalEntries
+
+		return await db.journalEntries
 			.find(id)
 			.selectAll()
-			.where({ authorUserId: user.id })
+			.where({ authorUserId: user.id, teamId: activeTeamId })
 			.update(updates);
-
-		return updatedJournalEntry;
 	});
 
 // Delete journal entry
-const deleteEntry = rpcProtectedProcedure
-	.input(journalEntryDeleteZod.extend({ teamId: z.ulid().nullable().optional() }))
+const deleteEntry = rpcProtectedActiveTeamProcedure
+	.input(journalEntryDeleteZod)
 	.output(z.object({ success: z.boolean() }))
-	.handler(async ({ input: { id, teamId }, context: { user } }) => {
-		const query: any = { id, authorUserId: user.id };
-		if (teamId !== undefined) {
-			query.teamId = teamId;
-		}
-		
-		await db.journalEntries.find(id).where(query).delete();
+	.handler(async ({ input: { id }, context: { user, activeTeamId } }) => {
+		await db.journalEntries
+			.find(id)
+			.where({ authorUserId: user.id, teamId: activeTeamId })
+			.delete();
 
 		return { success: true };
+	});
+
+// ─── Sync ───────────────────────────────────────────────────────────────
+
+const pushCreates = rpcProtectedActiveTeamProcedure
+	.route({ method: "POST", tags: ["Journal Entries"] })
+	.input(journalEntryPushCreatesInputZod)
+	.output(journalEntryPushCreatesOutputZod)
+	.handler(async ({ input, context: { user, activeTeamId } }) => {
+		return await pushJournalEntryCreatesService(input, user.id, activeTeamId);
+	});
+
+const pullBundles = rpcProtectedActiveTeamProcedure
+	.route({ method: "POST", tags: ["Journal Entries"] })
+	.input(journalEntryPullBundlesInputZod)
+	.output(journalEntryPullBundlesOutputZod)
+	.handler(async ({ input, context: { user } }) => {
+		return await pullJournalEntriesService(input, user.id);
 	});
 
 export const journalEntriesRouter = {
@@ -117,4 +167,6 @@ export const journalEntriesRouter = {
 	update,
 	getByUser,
 	delete: deleteEntry,
+	pushCreates,
+	pullBundles,
 };

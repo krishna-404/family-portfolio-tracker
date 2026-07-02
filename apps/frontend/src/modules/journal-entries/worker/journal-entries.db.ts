@@ -1,214 +1,136 @@
-import Dexie from "dexie";
-import { JournalEntrySelectAll, journalEntrySelectAllZod } from "@connected-repo/zod-schemas/journal_entry.zod";
-import { clientDb, notifySubscribers, type WithSync } from "../../../worker/db/db.manager";
+import type { FileSelectAll } from "@connected-repo/zod-schemas/file.zod";
+import type { JournalEntrySelectAll } from "@connected-repo/zod-schemas/journal_entry.zod";
+import type { JournalEntrySelectAllWithRelations } from "@connected-repo/zod-schemas/journal-entries/sync";
+import { getClientDb } from "../../../worker/db/db.lifecycle";
+import {
+	notifySubscribers,
+	type StoredJournalEntry,
+} from "../../../worker/db/db.manager";
 
-export class JournalEntriesDBManager {
-  /**
-   * Upsert from SERVER (SSE or API response)
-   */
-  async upsert(entry: JournalEntrySelectAll) {
-    const data: WithSync<JournalEntrySelectAll> = {
-      ...journalEntrySelectAllZod.parse(entry),
-      _pendingAction: null,
-    };
-    
-    await clientDb.journalEntries.put(data);
-    notifySubscribers("journalEntries");
-  }
+/**
+ * Local mirror of `journal_entries` plus its nested `files` relation.
+ * Pending vs confirmed distinction lives on the row: `createdAt === null`
+ * means the row exists only locally.
+ */
+export const journalEntriesDb = {
+	async getAll(teamId: string): Promise<StoredJournalEntry[]> {
+		return await getClientDb().journalEntries
+			.where("[teamId+updatedAt]")
+			.between([teamId, Dexie.minKey], [teamId, Dexie.maxKey])
+			.reverse()
+			.toArray();
+	},
 
-  /**
-   * Bulk upsert from SERVER (Delta sync)
-   */
-  async bulkUpsert(entries: JournalEntrySelectAll[]) {
-    if (entries.length === 0) return;
-    
-    const data: WithSync<JournalEntrySelectAll>[] = entries.map(entry => ({
-      ...entry,
-      _pendingAction: null,
-    }));
+	async getPending(teamId: string): Promise<StoredJournalEntry[]> {
+		// Dexie can't index nulls directly; scan the team's rows.
+		return await getClientDb().journalEntries
+			.where({ teamId })
+			.filter((r) => r.createdAt == null)
+			.toArray();
+	},
 
-    await clientDb.journalEntries.bulkPut(data);
-    notifySubscribers("journalEntries");
-  }
+	async getById(id: string): Promise<StoredJournalEntry | undefined> {
+		return await getClientDb().journalEntries.get(id);
+	},
 
-  /**
-   * LOCAL Update (User edit)
-   * Enforces Online-Only for synced records.
-   */
-  async handleLocalUpdate(id: string, updates: Partial<JournalEntrySelectAll>) {
-    const existing = await clientDb.journalEntries.get(id);
-    if (!existing) {
-      throw new Error(`Entry with id ${id} not found.`);
-    }
+	/**
+	 * Local optimistic write. `createdAt` is stamped `null` — the sync
+	 * engine will overwrite the whole row with the server's canonical
+	 * copy once `create` or `pushCreates` returns.
+	 */
+	async upsertPendingLocal(row: JournalEntrySelectAll): Promise<StoredJournalEntry> {
+		const pending: StoredJournalEntry = {
+			...row,
+			createdAt: null,
+			syncError: null,
+		};
+		await getClientDb().journalEntries.put(pending);
+		notifySubscribers("journalEntries");
+		return pending;
+	},
 
-    // If it's a new unsynced record, we allow offline-first logic
-    if (existing._pendingAction === 'create') {
-      await clientDb.transaction("rw", clientDb.journalEntries, async () => {
-        const updated: WithSync<JournalEntrySelectAll> = {
-          ...existing,
-          ...updates,
-          _pendingAction: 'create',
-        };
-        await clientDb.journalEntries.put(updated);
-      });
-      notifySubscribers("journalEntries");
-      return;
-    }
+	/**
+	 * Server-authoritative overwrite. Also merges the nested `files`
+	 * rows into the local `files` table if present (used by the online
+	 * `create` handler's echo and by `pushCreates` results).
+	 */
+	async overwriteFromServer(row: JournalEntrySelectAllWithRelations): Promise<void> {
+		const { files, ...parent } = row;
+		const stored: StoredJournalEntry = {
+			...(parent as JournalEntrySelectAll),
+			syncError: null,
+		};
+		await getClientDb().journalEntries.put(stored);
 
-    // For already-synced records, we MUST be online
-    if (!navigator.onLine) {
-      throw new Error("Offline: Edits to synced entries require an internet connection.");
-    }
+		if (files?.length) {
+			await mergeFilesFromServer(files);
+			notifySubscribers("files");
+		}
+		notifySubscribers("journalEntries");
+	},
 
-    try {
-      // 1. Immediate API Call
-      const orpcFetch = (await import("../../../utils/orpc.client")).orpcFetch;
-      const result = await orpcFetch.journalEntries.update({
-        ...existing,
-        ...updates
-      });
+	async bulkUpsertFromServer(rows: JournalEntrySelectAll[]): Promise<void> {
+		if (rows.length === 0) return;
+		const stored: StoredJournalEntry[] = rows.map((r) => ({
+			...r,
+			syncError: null,
+		}));
+		await getClientDb().journalEntries.bulkPut(stored);
+		notifySubscribers("journalEntries");
+	},
 
-      // 2. Local Update on Success
-      await clientDb.transaction("rw", clientDb.journalEntries, async () => {
-        const data: WithSync<JournalEntrySelectAll> = {
-          ...result,
-          _pendingAction: null,
-        };
-        await clientDb.journalEntries.put(data);
-      });
-      notifySubscribers("journalEntries");
-    } catch (err) {
-      console.error("[JournalEntriesDB] Online update failed:", err);
-      throw err;
-    }
-  }
+	async setSyncError(id: string, error: string | null): Promise<void> {
+		await getClientDb().journalEntries.update(id, { syncError: error });
+		notifySubscribers("journalEntries");
+	},
 
-  /**
-   * LOCAL Create
-   */
-  async handleLocalCreate(entry: WithSync<JournalEntrySelectAll>) {
-    const data: WithSync<JournalEntrySelectAll> = {
-      ...entry,
-      _pendingAction: 'create',
-    };
-    await clientDb.journalEntries.put(data);
-    notifySubscribers("journalEntries");
-  }
+	async wipeByTeamAppId(teamId: string): Promise<void> {
+		await getClientDb().journalEntries.where({ teamId }).delete();
+		await getClientDb().files
+			.where({ teamId, tableName: "journalEntries" as const })
+			.delete();
+		notifySubscribers("journalEntries");
+		notifySubscribers("files");
+	},
+};
 
-  async bulkDelete(ids: string[]) {
-    await clientDb.journalEntries.bulkDelete(ids);
-    notifySubscribers("journalEntries");
-  }
-
-  /**
-   * LOCAL Delete
-   * Enforces Online-Only for synced records.
-   */
-  async delete(id: string) {
-    const existing = await clientDb.journalEntries.get(id);
-    if (!existing) {
-      throw new Error(`Entry with id ${id} not found.`);
-    }
-
-    // If never synced (pending create), just delete locally immediately
-    if (existing._pendingAction === 'create') {
-      await clientDb.journalEntries.delete(id);
-      notifySubscribers("journalEntries");
-      return;
-    }
-
-    // For already-synced records, we MUST be online to delete
-    if (!navigator.onLine) {
-      throw new Error("Offline: Deleting synced entries requires an internet connection.");
-    }
-
-    try {
-      // 1. Immediate API Call to server
-      const orpcFetch = (await import("../../../utils/orpc.client")).orpcFetch;
-      await orpcFetch.journalEntries.delete({ 
-        id: id,
-        teamId: existing.teamId || undefined 
-      });
-
-      // 2. Local Delete on server success
-      // No special modelling required - just delete the entry
-      await clientDb.journalEntries.delete(id);
-      notifySubscribers("journalEntries");
-    } catch (err) {
-      console.error("[JournalEntriesDB] Online delete failed:", err);
-      throw err;
-    }
-  }
-
-  async getById(id: string) {
-    return await clientDb.journalEntries.get(id);
-  }
-
-  async getAll(teamId: string | null = null) {
-    const baseQuery = teamId 
-      ? clientDb.journalEntries.where("teamId").equals(teamId)
-      : clientDb.journalEntries.filter(e => !e.teamId);
-
-    // Simplified query as items are no longer marked for deletion
-    return await baseQuery
-      .reverse()
-      .toArray();
-  }
-
-  async getAllUnscoped() {
-    return await clientDb.journalEntries.reverse().toArray();
-  }
-
-  async getPaginated(offset: number, limit: number, teamId: string | null = null) {
-    if (teamId) {
-      return clientDb.journalEntries
-        .where("[teamId+createdAt]")
-        .between([teamId, Dexie.minKey], [teamId, Dexie.maxKey])
-        .filter(e => e._pendingAction === null)
-        .reverse()
-        .offset(offset)
-        .limit(limit)
-        .toArray();
-    }
-    return clientDb.journalEntries
-      .toCollection()
-      .filter(e => !e.teamId && e._pendingAction === null)
-      .reverse()
-      .offset(offset)
-      .limit(limit)
-      .toArray();
-  }
-
-  getLatestUpdatedAt() {
-    return clientDb.journalEntries.orderBy("updatedAt").last();
-  }
-
-  count(teamId: string | null = null) {
-    if (teamId) {
-      return clientDb.journalEntries.where("teamId").equals(teamId).filter(e => e._pendingAction === null).count();
-    }
-    return clientDb.journalEntries.filter(e => !e.teamId && e._pendingAction === null).count();
-  }
-
-  countPending(teamId: string | null = null) {
-    if (teamId) {
-      return clientDb.journalEntries.where("teamId").equals(teamId).filter(e => !!e._pendingAction).count();
-    }
-    return clientDb.journalEntries.filter(e => !e.teamId && !!e._pendingAction).count();
-  }
-
-  getPending(teamId: string | null = null) {
-    if (teamId) {
-      return clientDb.journalEntries.where("teamId").equals(teamId).filter(e => !!e._pendingAction).reverse().toArray();
-    }
-    return clientDb.journalEntries.filter(e => !e.teamId && !!e._pendingAction).reverse().toArray();
-  }
-
-  async wipeByTeamAppId(teamAppId: string) {
-    console.warn(`[JournalEntriesDBManager] Wiping all entries for team ${teamAppId}`);
-    await clientDb.journalEntries.where("teamId").equals(teamAppId).delete();
-    notifySubscribers("journalEntries");
-  }
+async function mergeFilesFromServer(rows: FileSelectAll[]): Promise<void> {
+	// Preserve local-only upload state; overwrite the metadata fields.
+	await getClientDb().transaction("rw", getClientDb().files, async () => {
+		for (const row of rows) {
+			const existing = await getClientDb().files.get(row.id);
+			if (existing) {
+				await getClientDb().files.put({
+					...existing,
+					...row,
+				});
+			} else {
+				await getClientDb().files.put({
+					...row,
+					mainUploadState: row.cdnUrl ? "uploaded" : "pending",
+					mainUploadAttempts: 0,
+					mainLastError: null,
+					mainLastAttemptAt: null,
+					mainChecksum: null,
+					mainOpfsPath: null,
+					thumbnailUploadState: row.thumbnailCdnUrl
+						? "uploaded"
+						: row.mimeType.startsWith("image/") || row.mimeType === "application/pdf"
+							? "pending"
+							: "not_attempted",
+					thumbnailUploadAttempts: 0,
+					thumbnailLastError: null,
+					thumbnailLastAttemptAt: null,
+					thumbnailChecksum: null,
+					thumbnailOpfsPath: null,
+					syncError: null,
+				});
+			}
+		}
+	});
 }
 
-export const journalEntriesDb = new JournalEntriesDBManager();
+// Local Dexie import — placed at the bottom so the file's exports live
+// above the value-only import. Prevents circular hoisting quirks.
+// biome-ignore lint/style/useImportType: Dexie's `minKey`/`maxKey` are value exports
+import Dexie from "dexie";

@@ -2,32 +2,77 @@ import { allowedOrigins } from "@backend/configs/allowed_origins.config";
 import { env, isDev, isProd, isTest } from "@backend/configs/env.config";
 import { db } from "@backend/db/db";
 import { logger } from "@backend/utils/logger.utils";
-import { recordErrorOtel } from "@backend/utils/record-message.otel.utils";
 import { themeSettingZod } from "@connected-repo/zod-schemas/enums.zod";
-import { uniqueTimeArrayZod, zTimezone } from "@connected-repo/zod-schemas/zod_utils";
+import {
+	uniqueTimeArrayZod,
+	zTimezone,
+} from "@connected-repo/zod-schemas/zod_utils";
 import { betterAuth } from "better-auth";
 import { createAuthMiddleware } from "better-auth/api";
 import { bearer, phoneNumber } from "better-auth/plugins";
 import { apple } from "better-auth/social-providers";
-import { orchidAdapter } from "./orchid-adapter/factory.orchid_adapter";
 import { generateAppleClientSecret } from "./lib/apple.lib";
+import { orchidAdapter } from "./orchid-adapter/factory.orchid_adapter";
 
-// Apple Client Secret is generated on-the-fly and cached for the process duration
-// (or could be periodically refreshed if the process is long-lived)
-const appleClientSecretFn = (async () => {
-	if (!env.APPLE_CLIENT_ID || !env.APPLE_TEAM_ID || !env.APPLE_KEY_ID || !env.APPLE_PRIVATE_KEY) {
+// Apple Client Secret is a short-lived JWT (currently signed with a 1h expiry in
+// apple.lib.ts). We cache the generated secret alongside its expiry and rebuild
+// it lazily inside the auth `hooks.before` handler when it's within 60s of
+// expiring. Without this, a long-lived process would keep serving an expired
+// JWT and Apple would reject every /sign-in/social call with `invalid_client`.
+const APPLE_SECRET_TTL_MS = 60 * 60 * 1000; // must stay <= JWT expiry in apple.lib.ts
+const APPLE_SECRET_REFRESH_MARGIN_MS = 60 * 1000;
+
+let appleClientSecretCache:
+	| { secret: string; expiresAt: number }
+	| undefined;
+let appleClientSecretInflight: Promise<string | undefined> | undefined;
+
+async function getAppleClientSecret(): Promise<string | undefined> {
+	if (
+		!env.APPLE_CLIENT_ID ||
+		!env.APPLE_TEAM_ID ||
+		!env.APPLE_KEY_ID ||
+		!env.APPLE_PRIVATE_KEY
+	) {
 		return undefined;
 	}
-	return generateAppleClientSecret({
-		clientId: env.APPLE_CLIENT_ID,
-		teamId: env.APPLE_TEAM_ID,
-		keyId: env.APPLE_KEY_ID,
-		privateKey: env.APPLE_PRIVATE_KEY,
-	}).catch((err) => {
-		logger.error({ err }, "Failed to generate Apple Client Secret");
-		return undefined;
-	});
-})();
+
+	const now = Date.now();
+	if (
+		appleClientSecretCache &&
+		now < appleClientSecretCache.expiresAt - APPLE_SECRET_REFRESH_MARGIN_MS
+	) {
+		return appleClientSecretCache.secret;
+	}
+
+	// De-dupe concurrent refreshes.
+	if (appleClientSecretInflight) {
+		return appleClientSecretInflight;
+	}
+
+	appleClientSecretInflight = (async () => {
+		try {
+			const secret = await generateAppleClientSecret({
+				clientId: env.APPLE_CLIENT_ID as string,
+				teamId: env.APPLE_TEAM_ID as string,
+				keyId: env.APPLE_KEY_ID as string,
+				privateKey: env.APPLE_PRIVATE_KEY as string,
+			});
+			appleClientSecretCache = {
+				secret,
+				expiresAt: Date.now() + APPLE_SECRET_TTL_MS,
+			};
+			return secret;
+		} catch (err) {
+			logger.error({ err }, "Failed to generate Apple Client Secret");
+			return undefined;
+		} finally {
+			appleClientSecretInflight = undefined;
+		}
+	})();
+
+	return appleClientSecretInflight;
+}
 
 // TODO: Instrument Better Auth with OpenTelemetry for automatic tracing
 // This will automatically create spans for all auth operations including:
@@ -45,7 +90,7 @@ export const auth = betterAuth({
 	advanced: {
 		crossSubDomainCookies: {
 			enabled: Boolean(isProd && env.PROD_COOKIE_DOMAIN),
-			domain: env.PROD_COOKIE_DOMAIN
+			domain: env.PROD_COOKIE_DOMAIN,
 		},
 		defaultCookieAttributes: {
 			httpOnly: true,
@@ -65,22 +110,24 @@ export const auth = betterAuth({
 	plugins: [
 		bearer(),
 		phoneNumber({
-			sendOTP: async ({ phoneNumber, code }, ctx) => {
+			sendOTP: async ({ phoneNumber, code }, _ctx) => {
 				logger.info({ phoneNumber, code }, "Sending phone number OTP");
 				// TODO: Implement actual SMS provider here
 			},
 			signUpOnVerification: {
 				getTempEmail: (phoneNumber) => `${phoneNumber}@temp-local.com`,
 				getTempName: (phoneNumber) => phoneNumber,
-			}
-		})
+			},
+		}),
 	],
 	hooks: {
 		before: createAuthMiddleware(async (ctx) => {
-			const appleClientSecret = await appleClientSecretFn;
+			const appleClientSecret = await getAppleClientSecret();
 
 			// 1. Update static web apple provider if it exists
-			const appleWebProvider = ctx.context.socialProviders.find((p) => p.id === "apple");
+			const appleWebProvider = ctx.context.socialProviders.find(
+				(p) => p.id === "apple",
+			);
 			if (appleWebProvider && appleClientSecret) {
 				(appleWebProvider as any).clientSecret = appleClientSecret;
 			}
@@ -115,15 +162,21 @@ export const auth = betterAuth({
 
 						if (
 							aud &&
-							(aud === env.GOOGLE_IOS_CLIENT_ID || aud === env.GOOGLE_ANDROID_CLIENT_ID)
+							(aud === env.GOOGLE_IOS_CLIENT_ID ||
+								aud === env.GOOGLE_ANDROID_CLIENT_ID)
 						) {
-							const googleProvider = ctx.context.socialProviders.find((p) => p.id === "google");
+							const googleProvider = ctx.context.socialProviders.find(
+								(p) => p.id === "google",
+							);
 							if (googleProvider) {
 								(googleProvider as any).clientId = aud;
-								logger.debug({ aud }, "Swapping Google Client ID for native app");
+								logger.debug(
+									{ aud },
+									"Swapping Google Client ID for native app",
+								);
 							}
 						}
-					} catch (err) {
+					} catch (_err) {
 						// Ignore decode errors, better-auth will handle verification
 					}
 				}
@@ -140,22 +193,34 @@ export const auth = betterAuth({
 		// Level is handled in logger utility.
 		level: isTest ? "error" : "debug",
 		log: (level, message, ...args) => {
-			// Map Better Auth log levels to Pino log levels
+			// better-auth may pass Error objects or plain objects as trailing args.
+			// Extract the first Error separately so pino serializes its stack,
+			// and expose remaining args in a stable `details` field instead of
+			// numeric-key spreading them (which loses everything on Error instances).
+			const firstErr = args.find((a) => a instanceof Error) as
+				| Error
+				| undefined;
+			const otherArgs = args.filter((a) => a !== firstErr);
+			const payload: Record<string, unknown> = {
+				module: "better-auth",
+				details: otherArgs.length ? otherArgs : undefined,
+				err: firstErr,
+			};
 			switch (level) {
 				case "debug":
-					logger.debug({ module: "better-auth", ...args }, message);
+					logger.debug(payload, message);
 					break;
 				case "info":
-					logger.info({ module: "better-auth", ...args }, message);
+					logger.info(payload, message);
 					break;
 				case "warn":
-					logger.warn({ module: "better-auth", ...args }, message);
+					logger.warn(payload, message);
 					break;
 				case "error":
-					logger.error({ module: "better-auth", ...args }, message);
+					logger.error(payload, message);
 					break;
 				default:
-					logger.info({ module: "better-auth", ...args }, message);
+					logger.info(payload, message);
 			}
 		},
 	},
@@ -234,8 +299,8 @@ export const auth = betterAuth({
 				type: "string",
 				validator: {
 					input: zTimezone,
-					output: zTimezone
-				}
+					output: zTimezone,
+				},
 			},
 			themeSetting: {
 				type: "string",
@@ -244,8 +309,8 @@ export const auth = betterAuth({
 				input: true,
 				validator: {
 					input: themeSettingZod,
-					output: themeSettingZod
-				}
+					output: themeSettingZod,
+				},
 			},
 			journalReminderTimes: {
 				type: "string[]",
@@ -255,14 +320,14 @@ export const auth = betterAuth({
 				validator: {
 					input: uniqueTimeArrayZod,
 					output: uniqueTimeArrayZod,
-				}
+				},
 			},
 			activeTeamAppId: {
 				type: "string",
 				required: false,
 				defaultValue: null,
 				input: false,
-			}
+			},
 		},
 		modelName: "users",
 	},

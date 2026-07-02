@@ -1,5 +1,3 @@
-import { IdentifiedFile } from "./cdn.types";
-import { CDNManager } from "./cdn.manager";
 import { pLimit } from "../../utils/promise.utils";
 
 export interface MediaProcessingResult {
@@ -7,19 +5,20 @@ export interface MediaProcessingResult {
   error?: string;
 }
 
-export interface MediaUploadResult {
-  success: boolean;
-  cdnUrl: string | null;
-  error?: string;
-}
-
-// Module-level semaphore to preserve resource limits across all instances 
-// while avoiding Comlink proxying issues that occur with class properties.
+// Module-level semaphore to preserve resource limits across all instances
+// while avoiding Comlink proxying issues with class properties.
 const mediaWorkerSemaphore = pLimit(3);
 
+/**
+ * Thumbnail-generation helper exposed through the MediaWorker's Comlink
+ * proxy. The former `uploadFiles` / `uploadSingleFile` surface was
+ * retired — the sole live upload path is now
+ * `worker/sync/file_upload.worker.ts` (OPFS-backed, retry-aware). Any UI
+ * that still needs a local preview should call `generateThumbnail`
+ * directly; the same helper is invoked by `FileUploadWorker` when it
+ * lazily derives the thumbnail from the OPFS blob at upload time.
+ */
 export class MediaUploadService {
-  private cdnManager = new CDNManager();
-
   /**
    * Statelessly generates a thumbnail for a given file.
    */
@@ -46,57 +45,12 @@ export class MediaUploadService {
 
         return { thumbnailFile };
       } catch (error) {
-        return { 
-          thumbnailFile: null, 
-          error: error instanceof Error ? error.message : "Thumbnail generation failed" 
+        return {
+          thumbnailFile: null,
+          error: error instanceof Error ? error.message : "Thumbnail generation failed",
         };
       }
     });
-  }
-
-  /**
-   * Performs the actual CDN upload for a single file.
-   */
-  async uploadSingleFile(file: IdentifiedFile): Promise<MediaUploadResult> {
-    const results = await this.uploadFiles([file]);
-    return results[0]!;
-  }
-
-  /**
-   * Performs the actual CDN upload for multiple files in batch.
-   * Gets all presigned URLs in one go, then uploads with a concurrency limit.
-   */
-  async uploadFiles(files: IdentifiedFile[]): Promise<MediaUploadResult[]> {
-    if (files.length === 0) return [];
-
-    try {
-      // 1. Get ALL presigned URLs in a single request (Batching)
-      const presignedData = await this.cdnManager.getBatchPresignedUrls(files, "media");
-
-      // 2. Upload them in parallel, but LIMITED by the semaphore (Resource safety)
-      const uploadPromises = files.map((file, index) => {
-        const presigned = presignedData[index]!;
-        
-        return mediaWorkerSemaphore(async () => {
-          const result = await this.cdnManager.uploadToUrl(file, presigned);
-          return {
-            success: result.success,
-            cdnUrl: result.success ? result.url : null,
-            error: result.error,
-          };
-        });
-      });
-
-      return Promise.all(uploadPromises);
-    } catch (error) {
-      console.error("[MediaUploadService] Batch upload error:", error);
-      const errorMsg = error instanceof Error ? error.message : "Batch upload failed";
-      return files.map(() => ({
-        success: false,
-        cdnUrl: null,
-        error: errorMsg,
-      }));
-    }
   }
 }
 

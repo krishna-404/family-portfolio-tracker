@@ -1,13 +1,22 @@
 import { db } from "@backend/db/db";
-import { rpcProtectedProcedure } from "@backend/procedures/protected.procedure";
-import { rpcPublicProcedure } from "@backend/procedures/public.procedure";
-import { z } from "zod";
+import { syncDeltaService } from "@backend/modules/sync/services/sync_delta.sync.service";
 import {
+	rpcProtectedActiveTeamProcedure,
+	rpcProtectedProcedure,
+} from "@backend/procedures/protected.procedure";
+import { rpcPublicProcedure } from "@backend/procedures/public.procedure";
+import {
+	type PromptSelectAll,
 	promptGetByCategoryZod,
 	promptGetByIdZod,
 	promptSelectAllZod,
 } from "@connected-repo/zod-schemas/prompt.zod";
+import {
+	promptsPullBundlesInputZod,
+	promptsPullBundlesOutputZod,
+} from "@connected-repo/zod-schemas/prompts/sync";
 import { ORPCError } from "@orpc/server";
+import { z } from "zod";
 
 // Get all active prompts, optionally filtered by team
 const getAllActive = rpcProtectedProcedure
@@ -91,9 +100,29 @@ const getByCategory = rpcProtectedProcedure
 		return prompts;
 	});
 
+// ─── Sync ───────────────────────────────────────────────────────────────
+//
+// Prompts are a global (untenanted) table. Filtered only by the wave-1
+// snapshot ceiling.
+const pullBundles = rpcProtectedActiveTeamProcedure
+	.route({ method: "POST", tags: ["Prompts"] })
+	.input(promptsPullBundlesInputZod)
+	.output(promptsPullBundlesOutputZod)
+	.handler(async ({ input }) => {
+		const { data, syncMetadata } = await syncDeltaService<PromptSelectAll>({
+			// biome-ignore lint/suspicious/noExplicitAny: __scopes generic mismatch when passing bare table query
+			baseQuery: db.prompts as any,
+			syncMetadataInput: input.syncMetadata,
+			topLevelSyncedAt: input.topLevelSyncedAt,
+			syncedTable: "prompts",
+		});
+		return { rows: data, syncMetadata };
+	});
+
 export const promptsRouter = {
 	getAllActive,
 	getRandomActive,
 	getById,
 	getByCategory,
+	pullBundles,
 };

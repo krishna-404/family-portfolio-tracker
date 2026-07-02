@@ -1,12 +1,23 @@
 import * as Comlink from "comlink";
-import { CDNManager } from "./cdn/cdn.manager";
 import { mediaUploadService } from "./cdn/media-upload.service";
-import { exportService } from "./cdn/export.service";
+import { setActiveTeamId } from "./sync/active_team";
 
+/**
+ * MediaWorker: stateless off-main-thread work.
+ *
+ * Currently only exposes thumbnail generation — the CDN upload path was
+ * consolidated into `worker/sync/file_upload.worker.ts` (DataWorker
+ * realm) so raw blobs no longer cross a Comlink boundary just to be
+ * PUT-ed. This worker still carries its own copy of `active_team.ts`
+ * because `getMediaProxy` seeds the `x-team-id` header cache on spawn
+ * and on team switch; that seed is retained for any future MediaWorker
+ * RPCs (there are none today) and to keep the spawn contract stable.
+ */
 const mediaWorkerApi = {
-  cdn: Comlink.proxy(new CDNManager()),
-  media: Comlink.proxy(mediaUploadService),
-  export: Comlink.proxy(exportService),
+	media: Comlink.proxy(mediaUploadService),
+	setActiveTeamId(id: string | null): void {
+		setActiveTeamId(id);
+	},
 };
 
 export type MediaWorkerAPI = typeof mediaWorkerApi;

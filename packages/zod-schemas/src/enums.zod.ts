@@ -45,6 +45,16 @@ export const PG_TBUS_TASK_STATUS_ENUM = ["pending", "active", "completed", "fail
 export const pgTbusTaskStatusZod = z.enum(PG_TBUS_TASK_STATUS_ENUM);
 export type PgTbusTaskStatus = z.infer<typeof pgTbusTaskStatusZod>;
 
-export const TABLES_TO_SYNC_ENUM = ["teamsApp", "teamMembers", "journalEntries", "files", "prompts"] as const;
+export const FEATURE_FLAG_SCOPE_ENUM = ["global", "team"] as const;
+export const featureFlagScopeZod = z.enum(FEATURE_FLAG_SCOPE_ENUM);
+export type FeatureFlagScope = z.infer<typeof featureFlagScopeZod>;
+
+export const TABLES_TO_SYNC_ENUM = [
+	"teamsApp",
+	"teamMembers",
+	"prompts",
+	"journalEntries",
+	"files",
+] as const;
 export const tablesToSyncZod = z.enum(TABLES_TO_SYNC_ENUM);
 export type TablesToSync = z.infer<typeof tablesToSyncZod>;

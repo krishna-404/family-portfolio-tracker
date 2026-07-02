@@ -1,44 +1,29 @@
-import type { TeamAppSelectAll, TeamWithRole } from "@connected-repo/zod-schemas/team_app.zod";
-import { clientDb, notifySubscribers, type WithSync } from "./db.manager";
-import { teamMembersDb } from "./team_members.db";
+import type { TeamAppSelectAll } from "@connected-repo/zod-schemas/team_app.zod";
+import { getClientDb } from "./db.lifecycle";
+import { notifySubscribers } from "./db.manager";
 
-export class TeamsAppDBManager {
-  async saveTeams(teams: TeamAppSelectAll[]) {
-    const data: WithSync<TeamAppSelectAll>[] = teams.map(t => ({
-      ...t,
-      _pendingAction: null,
-    }));
-    await clientDb.teamsApp.bulkPut(data);
-    notifySubscribers("teamsApp");
-  }
+/**
+ * Local mirror of the `teams_app` server table. Server-authored:
+ * teams are created/edited via online RPCs; this store only receives
+ * rows via `pullBundles`.
+ */
+export const teamsAppDb = {
+	async getAll(): Promise<TeamAppSelectAll[]> {
+		return await getClientDb().teamsApp.toArray();
+	},
 
-  async getAll(): Promise<TeamAppSelectAll[]> {
-    return await clientDb.teamsApp.orderBy("name").toArray();
-  }
+	async getById(id: string): Promise<TeamAppSelectAll | undefined> {
+		return await getClientDb().teamsApp.get(id);
+	},
 
-  async getAllWithRole(userId: string): Promise<TeamWithRole[]> {
-    const teamMembers = await teamMembersDb.getUserTeamMembers(userId);
-    const teamAppIds = teamMembers.map((teamMember) => teamMember.teamId);
-    if (teamAppIds.length === 0) {
-      return [];
-    };
-    const teamApps = await clientDb.teamsApp.where("id").anyOf(teamAppIds).toArray();
-    const teamsAndRole = teamApps.map((teamApp) => {
-      const teamMember = teamMembers.find((teamMember) => teamMember.teamId === teamApp.id);
-      return {
-        ...teamApp,
-        joinedAt: teamMember?.joinedAt,
-        userRole: teamMember?.role,
-      };
-    });
-    return teamsAndRole.filter((t) => t.userRole) as TeamWithRole[];
-  }
+	async bulkUpsert(rows: TeamAppSelectAll[]): Promise<void> {
+		if (rows.length === 0) return;
+		await getClientDb().teamsApp.bulkPut(rows);
+		notifySubscribers("teamsApp");
+	},
 
-  async wipeByTeamAppId(teamAppId: string) {
-    await clientDb.teamsApp.where("id").equals(teamAppId).delete();
-    await teamMembersDb.wipeByTeamAppId(teamAppId);
-    notifySubscribers("teamsApp");
-  }
-}
-
-export const teamsAppDb = new TeamsAppDBManager();
+	async wipe(): Promise<void> {
+		await getClientDb().teamsApp.clear();
+		notifySubscribers("teamsApp");
+	},
+};

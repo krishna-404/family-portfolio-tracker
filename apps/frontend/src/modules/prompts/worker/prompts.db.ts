@@ -1,49 +1,22 @@
-import { PromptSelectAll } from "@connected-repo/zod-schemas/prompt.zod";
-import { clientDb, notifySubscribers, type WithSync } from "../../../worker/db/db.manager";
+import type { PromptSelectAll } from "@connected-repo/zod-schemas/prompt.zod";
+import { getClientDb } from "../../../worker/db/db.lifecycle";
+import { notifySubscribers } from "../../../worker/db/db.manager";
 
-export class PromptsDBManager {
-  async bulkDelete(prompts: PromptSelectAll[]) {
-    // Prompts are soft-deleted on the backend, so we just upsert the state
-    await this.bulkUpsert(prompts);
-  }
+/**
+ * Prompts are server-authored — the client only pulls, never pushes.
+ */
+export const promptsDb = {
+	async getAll(): Promise<PromptSelectAll[]> {
+		return await getClientDb().prompts.toArray();
+	},
 
-  async bulkUpsert(prompts: PromptSelectAll[]) {
-    const data: WithSync<PromptSelectAll>[] = prompts.map(p => ({
-      ...p,
-      _pendingAction: null,
-    }));
-    await clientDb.prompts.bulkPut(data);
-    notifySubscribers("prompts");
-  }
+	async getById(id: string): Promise<PromptSelectAll | undefined> {
+		return await getClientDb().prompts.get(id);
+	},
 
-  async upsert(prompt: PromptSelectAll) {
-    const data: WithSync<PromptSelectAll> = {
-      ...prompt,
-      _pendingAction: null,
-    };
-    await clientDb.prompts.put(data);
-    notifySubscribers("prompts");
-  }
-
-  getAll() {
-    return clientDb.prompts.toArray();
-  }
-
-  async getRandomActive() {
-    const query = clientDb.prompts.filter(p => !p.deletedAt);
-    
-    const active = await query.toArray();
-    
-    if (active.length === 0) {
-      console.warn(`[PromptsDB] No active prompts found`);
-      return null;
-    }
-    return active[Math.floor(Math.random() * active.length)];
-  }
-
-  getLatestUpdatedAt() {
-    return clientDb.prompts.orderBy("updatedAt").reverse().first();
-  }
-}
-
-export const promptsDb = new PromptsDBManager();
+	async bulkUpsert(rows: PromptSelectAll[]): Promise<void> {
+		if (rows.length === 0) return;
+		await getClientDb().prompts.bulkPut(rows);
+		notifySubscribers("prompts");
+	},
+};
