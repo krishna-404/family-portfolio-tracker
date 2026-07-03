@@ -63,6 +63,9 @@ export async function mainRequestDispatcher(
 
 	try {
 		// 3. Auth Routes (/api/auth/*)
+		// Note: /api/sentry-tunnel is proxied directly to Sentry by the
+		// frontend nginx (see nginx.conf.template) and never reaches this
+		// dispatcher.
 		if (requestUrl?.startsWith("/api/auth")) {
 			return await betterAuthHandler.handle(req, res);
 		}
@@ -71,6 +74,17 @@ export async function mainRequestDispatcher(
 		// to discover code-defined workflows in apps/backend/src/novu/.
 		if (requestUrl?.startsWith("/api/novu")) {
 			return await novuHandler.handle(req, res);
+		}
+
+		// 3c. oRPC User App Routes (/api/user-app/*)
+		// Must run BEFORE the /api/* OpenAPI catch-all so oRPC procedures
+		// aren't mistaken for OpenAPI routes.
+		if (requestUrl?.startsWith("/api/user-app")) {
+			const reactAppResult = await reactAppHandler.handle(req, res, {
+				context: {},
+				prefix: "/api/user-app",
+			});
+			if (reactAppResult.matched) return;
 		}
 
 		// 4. Root Path / Health Check
@@ -109,12 +123,6 @@ export async function mainRequestDispatcher(
 			prefix: "/super-admin",
 		});
 		if (superAdminResult.matched) return;
-
-		// 8. oRPC User App Routes (/user-app/*)
-		const _reactAppResult = await reactAppHandler.handle(req, res, {
-			context: {},
-			prefix: "/user-app",
-		});
 
 		// 9. Mobile App Routes (/mobile-app/*)
 		const mobileAppResult = await mobileAppHandler.handle(req, res, {

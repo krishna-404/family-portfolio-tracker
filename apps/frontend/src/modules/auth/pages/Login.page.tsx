@@ -48,7 +48,10 @@ export const LoginPage = () => {
    const handleGoogleLogin = async () => {
     setIsLoading(true);
  		let data: { url?: string } | undefined;
-		const callbackURL = `${env.VITE_USER_APP_URL}/dashboard`;
+		// Same-origin deploys leave VITE_USER_APP_URL empty; fall back to the
+		// visible origin so OAuth callbacks land on the frontend domain.
+		const appOrigin = env.VITE_USER_APP_URL || window.location.origin;
+		const callbackURL = `${appOrigin}/dashboard`;
 		
     try {
 			if(isTest){
@@ -70,7 +73,7 @@ export const LoginPage = () => {
 					throw: true
 				});
 
-				data = await authClient.signIn.email({
+				await authClient.signIn.email({
 					email,
 					password,
 					rememberMe: true,
@@ -78,11 +81,17 @@ export const LoginPage = () => {
 				}, {
 					throw: true
 				});
-			} else {    
+				// Email/password sign-in does NOT return a redirect URL — it
+				// just sets the session cookie. Navigate manually so the
+				// Playwright e2e globalSetup's `waitForURL('**/dashboard')`
+				// resolves instead of timing out on the login page.
+				window.location.href = callbackURL;
+				return;
+			} else {
 				data = await authClient.signIn.social({
 					provider: 'google',
 					callbackURL,
-					errorCallbackURL: `${env.VITE_USER_APP_URL}/auth/error`,
+					errorCallbackURL: `${appOrigin}/auth/error`,
 					// newUserCallbackURL: "/welcome",
 					disableRedirect: true,
 				}, {

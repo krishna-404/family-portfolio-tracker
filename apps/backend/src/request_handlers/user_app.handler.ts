@@ -71,6 +71,39 @@ export const reactAppHandler = new RPCHandler(userAppRouter, {
 			try {
 				return await next();
 			} catch (error) {
+				// Enrich CSRF failures with source-identifying headers. The
+				// default log line just says "Invalid CSRF token" with an
+				// empty req.headers, which makes it impossible to tell whether
+				// the caller is our SPA, a Traefik healthcheck, an uptime
+				// monitor, or a scanner. Log once per rejection and only for
+				// CSRF-related errors so we don't spam the log for auth/etc.
+				const errCode = (error as { code?: string })?.code;
+				const errMsg = (error as { message?: string })?.message ?? "";
+				if (
+					errCode === "CSRF_TOKEN_MISMATCH" ||
+					errMsg.toLowerCase().includes("csrf")
+				) {
+					// Node HTTP headers: header names are already lowercased,
+					// values can be string | string[] | undefined. Collapse
+					// arrays for readable log lines.
+					const h = (name: string): string | undefined => {
+						const v = request.headers[name];
+						return Array.isArray(v) ? v.join(", ") : v;
+					};
+					logger.warn(
+						{
+							url: request.url,
+							method: request.method,
+							userAgent: h("user-agent"),
+							origin: h("origin"),
+							referer: h("referer"),
+							forwardedFor: h("x-forwarded-for"),
+							realIp: h("x-real-ip"),
+							host: h("host"),
+						},
+						"CSRF rejection — request source details",
+					);
+				}
 				throw handleBoundaryError(error, "user_app");
 			}
 		},
