@@ -2,6 +2,7 @@ import type { FileSelectAll } from "@connected-repo/zod-schemas/file.zod";
 import { OPFSManager } from "../utils/opfs.manager";
 import { getClientDb } from "./db.lifecycle";
 import { notifySubscribers } from "./db.manager";
+import { canGenerateThumbnail, mergeServerFileRow } from "./files.merge";
 import type { FileUploadState, StoredFile } from "./schema.db.types";
 
 /**
@@ -127,70 +128,7 @@ export const filesDb = {
 		await getClientDb().transaction("rw", getClientDb().files, async () => {
 			for (const row of rows) {
 				const existing = await getClientDb().files.get(row.id);
-				// Preserve client-only fields when the server row overwrites.
-				//
-				// `cdnUrl` / `thumbnailCdnUrl` / `isMainFileLost` are client-
-				// owned in the window between "uploaded to CDN" and
-				// "server acknowledged via pushCdnUpdates". If a pull runs
-				// during that window, the server row still has null/false
-				// for these fields — but the local row already has the
-				// authoritative post-PUT values queued for push. Falling
-				// back to `existing` when the server value is empty keeps
-				// the queued push intact; otherwise the next pushCdnUpdates
-				// sees a null and sends nothing, permanently stranding the
-				// upload.
-				const mergedCdnUrl = row.cdnUrl ?? existing?.cdnUrl ?? null;
-				const mergedThumbCdnUrl =
-					row.thumbnailCdnUrl ?? existing?.thumbnailCdnUrl ?? null;
-
-				// Server-heals-stuck-local. If the server row already has a
-				// CDN URL, force the corresponding local state to `uploaded`
-				// and clear any error. Without this, a per-device transient
-				// failure (`failed` / `abandoned` / `lost`) stays sticky
-				// forever even after the same file was uploaded on another
-				// device and mirrored down.
-				const serverHasMain = row.cdnUrl != null;
-				const serverHasThumb = row.thumbnailCdnUrl != null;
-
-				const merged: StoredFile = {
-					...row,
-					cdnUrl: mergedCdnUrl,
-					thumbnailCdnUrl: mergedThumbCdnUrl,
-					isMainFileLost:
-						row.isMainFileLost || existing?.isMainFileLost || false,
-					mainUploadState: serverHasMain
-						? "uploaded"
-						: existing?.mainUploadState ?? "pending",
-					mainUploadAttempts: existing?.mainUploadAttempts ?? 0,
-					mainLastError: serverHasMain ? null : existing?.mainLastError ?? null,
-					mainLastAttemptAt: existing?.mainLastAttemptAt ?? null,
-					// `mainChecksum` and `mainOpfsPath` are device-local — the
-					// blob physically lives in this device's OPFS at that path.
-					// For rows arriving from the server for the first time
-					// (another device uploaded), `existing` is undefined and
-					// both stay null. That's correct: there's no blob to point
-					// at. Consequence: `FileUploadWorker.runMainUpload` cannot
-					// retry the upload from THIS device — it needs the OPFS
-					// blob. Which is fine, because the CDN URL is already set
-					// (that's how we know the file exists at all). Recovery
-					// from `isMainFileLost === true` on such a row requires
-					// the user to re-pick the file.
-					mainChecksum: existing?.mainChecksum ?? null,
-					mainOpfsPath: existing?.mainOpfsPath ?? null,
-					thumbnailUploadState: serverHasThumb
-						? "uploaded"
-						: existing?.thumbnailUploadState ??
-							(canGenerateThumbnail(row.mimeType) ? "pending" : "not_attempted"),
-					thumbnailUploadAttempts: existing?.thumbnailUploadAttempts ?? 0,
-					thumbnailLastError: serverHasThumb
-						? null
-						: existing?.thumbnailLastError ?? null,
-					thumbnailLastAttemptAt: existing?.thumbnailLastAttemptAt ?? null,
-					thumbnailChecksum: existing?.thumbnailChecksum ?? null,
-					thumbnailOpfsPath: existing?.thumbnailOpfsPath ?? null,
-					syncError: existing?.syncError ?? null,
-				};
-				await getClientDb().files.put(merged);
+				await getClientDb().files.put(mergeServerFileRow(existing, row));
 			}
 		});
 		notifySubscribers("files", "sync");
@@ -340,6 +278,26 @@ export const filesDb = {
 	},
 
 	/**
+	 * Read a file's locally-staged blob back out of OPFS so the UI can offer
+	 * it as a download. This is the "no data is ever lost" escape hatch: a
+	 * file that can't be uploaded (dead CDN creds, offline for good, etc.) can
+	 * still be rescued to the user's device BEFORE they Abandon/Discard it.
+	 *
+	 * Returns null when there is no local blob (already uploaded — it lives on
+	 * the CDN — or the source was lost), in which case there's nothing to
+	 * rescue locally. The Blob transfers across the Comlink boundary intact.
+	 */
+	async readForDownload(
+		id: string,
+	): Promise<{ blob: Blob; fileName: string; mimeType: string } | null> {
+		const row = await getClientDb().files.get(id);
+		if (!row?.mainOpfsPath) return null;
+		const blob = await OPFSManager.readFile(row.mainOpfsPath);
+		if (!blob) return null;
+		return { blob, fileName: row.fileName, mimeType: row.mimeType };
+	},
+
+	/**
 	 * Hard-delete a single file row + its OPFS blob. Used from the sync-
 	 * status "Discard" action when a stuck row can't be recovered
 	 * (`lost`, `abandoned`, or repeated `syncError`). Server-side rows
@@ -479,7 +437,3 @@ export const filesDb = {
 		return stranded.length;
 	},
 };
-
-function canGenerateThumbnail(mimeType: string): boolean {
-	return mimeType.startsWith("image/") || mimeType === "application/pdf";
-}

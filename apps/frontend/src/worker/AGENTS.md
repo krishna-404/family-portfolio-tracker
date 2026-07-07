@@ -15,17 +15,20 @@ Stateful. Owns the per-user Dexie DB and the sync engine.
   table with a wave-1 anchor:
   1. `teamsApp` (anchor — mints `topLevelSyncedAt`) →
   2. `teamMembers` → `prompts` → `journalEntries` → `files` (pull pipeline).
-  3. Push pipeline (parallel with pull): `pushJournalEntryCreates` then
-     `pushFileCdnUpdates`.
-  Cursors are per-`(table, teamId)`. Cycles capture `expectedUserId` +
-  `expectedTeamId` and abort writes if either flips mid-cycle to protect the
-  old team's cursor.
+  3. Team-wipe drain (tombstones detected during the pull), then the
+     push pipeline: `pushJournalEntryCreates` then `pushFileCdnUpdates`.
+  Push runs AFTER the pull + wipe (serialised, not parallel) so we never
+  push mutations for a team the user was just removed from.
+  Cursors are per-`(table, teamId)`. Team-switch drift is handled at the
+  ORPC link boundary by `switchGate`; the cycle also re-checks the active
+  team at start and aborts if it flipped.
 - **Trigger sources inside the worker**:
   - Dexie `subscribe()` DB-write callback (post-write kick).
   - `self.addEventListener("online", ...)`.
-  - 60s interval safety net.
+  - 120s interval safety net.
   Additional triggers arrive from the main thread via `sync-triggers.ts`
-  (`visibilitychange`, `focus`, `online`, 60s interval, post-mutation kicks).
+  (`visibilitychange`, `focus`, `online`, 120s interval, post-mutation kicks)
+  and from an FCM silent push relayed by the service worker.
 - **FileUploadWorker** (`sync/file_upload.worker.ts`): sole CDN upload
   path — both online-picked and offline-picked files go through
   `filesDb.upsertLocal` (which writes the blob to OPFS) and are drained
@@ -56,12 +59,17 @@ Video thumbnails still run on the main thread (`utils/thumbnail-video-ui.ts`)
 because `VideoDecoder` / `<video>` require a DOM-backed runtime.
 
 ## Cross-worker bridge
-The main thread bridges the MediaWorker proxy into the DataWorker via
-`dataProxy.setMediaProxy(...)`. Inside the DataWorker, `worker.context.ts`
-holds this proxy in a `ProxyCell` — the `FileUploadWorker` awaits it
-only for thumbnail generation (the CDN PUT itself is direct, in the
-DataWorker realm). A sync trigger arriving before wiring completes
-pends instead of crashing.
+The DataWorker talks to the MediaWorker over a **direct `MessageChannel`**, not
+through the main thread. At startup the main thread creates one channel and
+brokers a port to each side: it posts `{ __connectMediaPort }` to the
+MediaWorker (which `Comlink.expose`s its API on that port) and hands the other
+port to the DataWorker via `connectMediaPort` (which `Comlink.wrap`s it into
+`worker.context.ts`'s `ProxyCell`). `FileUploadWorker` then calls
+`generateThumbnail` worker-to-worker — neither the call nor the file blob
+round-trips through main. A sync trigger arriving before wiring completes pends
+on the `ProxyCell` instead of crashing. The MediaWorker still exposes the same
+API on its default endpoint for main-thread callers (SmartMediaUploader, the
+active-team seed).
 
 ## Lifecycle
 - Main thread instantiates both workers lazily on first `getDataProxy()` /
@@ -73,3 +81,15 @@ pends instead of crashing.
   cleared everywhere.
 - `tearDownSync()` (tests / hard reset) → `terminateWorkers()`; the on-disk
   Dexie DB is preserved.
+
+## Membership revocation (Q6 — fixed)
+
+"You were removed from a team → wipe that team's local data" is handled by
+`SyncOrchestrator.reconcileMemberships`, which runs FIRST in every cycle and
+calls the **session-only** `teams.listMyActiveTeamIds` endpoint. It diffs the
+teams the user is currently an active member of against the teams mirrored
+locally and wipes the difference. Because it's session-only it works even when
+the user was removed from their active team (the active-team-scoped anchor
+would 403), and because it reconciles against *current* membership rather than
+a tombstone it can't loop on re-invite. Rationale + the pure diff helper live
+in `sync/membership_reconciliation.ts`.

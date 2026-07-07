@@ -15,7 +15,7 @@ Production-ready Turborepo monorepo for building full-stack TypeScript applicati
 - **Database**: PostgreSQL with [Orchid ORM](https://orchid-orm.netlify.app/)
 - **Task Queue**: [pg-tbus](https://github.com/hextech-dev/pg-tbus) (PostgreSQL-based event bus)
 - **Authentication**: Better Auth (Google OAuth)
-- **Notifications**: SuprSend
+- **Notifications**: Novu (in-app inbox + FCM push)
 - **Observability**: OpenTelemetry, Sentry
 - **Security**: Helmet, CORS, Rate Limiting, API key auth
 
@@ -26,7 +26,7 @@ Production-ready Turborepo monorepo for building full-stack TypeScript applicati
 - **UI**: Material-UI (via `@connected-repo/ui-mui`)
 - **PWA**: Vite PWA plugin with offline support
 - **Offline Storage**: Dexie.js (IndexedDB wrapper)
-- **Sync**: SSE-based delta sync with real-time updates
+- **Sync**: Pull-based two-cursor delta sync + FCM silent-push wake (no SSE)
 - **Workers**: Two-worker architecture (DataWorker + MediaWorker)
 - **Testing**: Playwright (E2E)
 
@@ -55,7 +55,7 @@ Production-ready Turborepo monorepo for building full-stack TypeScript applicati
 │       ├── src/
 │       │   ├── modules/            # Feature modules
 │       │   ├── worker/             # Web Workers (DataWorker, MediaWorker)
-│       │   ├── sw/                 # Service Worker (SSE sync)
+│       │   ├── sw/                 # Service Worker (PWA shell, FCM push, OPFS media)
 │       │   ├── components/         # Shared components
 │       │   └── main.tsx            # Entry
 │       └── package.json
@@ -68,53 +68,52 @@ Production-ready Turborepo monorepo for building full-stack TypeScript applicati
 
 ## Getting Started
 
-### Prerequisites
-- Node.js 22+
-- Yarn 1.22.22
-- PostgreSQL
+Two ways to run: one-command Docker Compose (recommended for onboarding) or
+host-mode with your local Node/Postgres (recommended for day-to-day work with
+native tooling).
 
-### Installation
+### Option A — One command with Docker Compose (recommended for first run)
 
-1. Clone the repository:
+Boots postgres, backend (hot reload), frontend (hot reload), and an nginx
+sidecar that mirrors the prod reverse-proxy layout (`/api/*` → backend,
+`/` → SPA). First boot builds the shared packages, auto-creates the database,
+runs migrations, and seeds.
+
+**Prerequisites:** Docker + Docker Compose v2.
+
 ```bash
 git clone git@github.com:shipmyapp/connected-repo.git
 cd connected-repo
-```
-
-2. Set up environment variables:
-```bash
 cp apps/backend/.env.example apps/backend/.env
 cp apps/frontend/.env.example apps/frontend/.env
+docker compose -f docker-compose.dev.yml up
 ```
 
-3. Configure your database connection in `apps/backend/.env`
+Open http://localhost:8080 — same-origin routing exactly like prod. See
+`docker-compose.dev.yml` for the full port map and the wipe-and-reset flow
+(`down -v`).
 
-4. Install dependencies & build packages:
+### Option B — Host-mode dev
+
+**Prerequisites:** Node.js 22+, Yarn 1.22.22, PostgreSQL running locally.
+
 ```bash
+git clone git@github.com:shipmyapp/connected-repo.git
+cd connected-repo
+cp apps/backend/.env.example apps/backend/.env
+cp apps/frontend/.env.example apps/frontend/.env
+# Point apps/backend/.env at your local postgres, then:
 yarn install
 yarn build
-```
-
-5. Create databases and run migrations:
-```bash
-yarn db create
-yarn db up
-yarn db seed
+yarn db create && yarn db up && yarn db seed
 yarn test:db:setup  # Setup test database
-```
-
-### Development
-
-Start both frontend and backend:
-```bash
 yarn dev
 ```
 
-Or individually:
-```bash
-cd apps/backend && yarn dev   # Backend only (http://localhost:3000)
-cd apps/frontend && yarn dev  # Frontend only (http://localhost:5173)
-```
+`yarn dev` starts frontend on http://localhost:5173 and backend on :3000. Vite
+proxies `/api/*` to :3000 so the SPA hits the same origin it does in prod —
+no separate backend URL, no CORS in dev. Set `VITE_DEV_BACKEND_PROXY_TARGET`
+in `apps/frontend/.env` if your backend runs somewhere else.
 
 ## Available Scripts
 
@@ -210,16 +209,16 @@ Frontend includes PWA support:
 Full offline support with Dexie.js (IndexedDB):
 
 **Data Synchronization:**
-- **Delta Sync**: SSE-based streaming sync (delta-on-connect + live monitoring)
+- **Delta Sync**: Pull-based two-cursor delta sync per table (no SSE, no long-lived socket). Triggered by a 2-minute interval, `visibilitychange`/`focus`/`online` events, post-write kicks, and FCM silent-push wake.
 - **Local Database**: IndexedDB with separate tables for synced data and pending changes
 - **Reactive UI**: Hooks automatically re-render when local DB changes
-- **Conflict Resolution**: Soft deletes, server-wins for conflicts
+- **Conflict Resolution**: Soft deletes (tombstones), server-wins for conflicts
 
 **Worker Architecture:**
 ```
 UI Thread (React)
-  ├─► DataWorker (Dexie DB, Sync, SSE)
-  └─► MediaWorker (CDN uploads, thumbnails, exports)
+  ├─► DataWorker (Dexie DB, SyncOrchestrator, FileUploadWorker/CDN)
+  └─► MediaWorker (stateless thumbnail generation)
 ```
 
 **File Uploads:**
@@ -231,46 +230,48 @@ UI Thread (React)
 
 **DataWorker**: Handles all IndexedDB access and sync
 - Dexie.js database operations
-- SyncOrchestrator for background sync
-- SSE connection management
+- SyncOrchestrator for background pull-delta sync + push queue
+- FileUploadWorker: the sole CDN upload path (presigned PUT from the DataWorker realm)
 - Only worker allowed to access IndexedDB
 
 **MediaWorker**: Stateless processing worker
-- Image compression (browser-image-compression)
-- PDF thumbnail generation (pdfjs-dist)
-- Video thumbnail generation (mp4box + WebCodecs)
-- CDN uploads via presigned URLs
-- CSV/PDF exports
+- Image thumbnail generation (browser-image-compression)
+- PDF thumbnail rendering (pdfjs-dist)
+- Returns derived thumbnail blobs to the caller — never persists, never uploads
 
-**Communication**: Comlink proxy pattern for worker-to-worker calls
+> Note: video thumbnails currently run on the main thread (`VideoDecoder`/`<video>` need a DOM runtime).
 
-### Real-Time Sync (SSE)
+**Communication**: Comlink proxy pattern; the MediaWorker proxy is bridged into the DataWorker for thumbnail generation.
 
-Server-Sent Events for live data synchronization:
+### Delta Sync (pull-based)
 
-**Backend** (Orchid ORM hooks):
-```typescript
-// Tables emit events on create/update/delete
-this.afterCreate(schema.keyof().options, (entries) => {
-  pushToSync("create", entries);
-});
-```
+There is **no SSE** and no server push channel. The client pulls changes on a schedule and on demand:
 
-**Frontend** (Service Worker):
-- Connects on login, disconnects on logout
-- Receives delta chunks on initial connection
-- Real-time updates via streaming SSE
-- Heartbeat every 10s for connectivity monitoring
+**Backend**: each synced table exposes a `pullBundles` procedure backed by the generic
+two-cursor `syncDeltaService` (`toCursor` catches up on new rows, `fromCursor`
+backfills history). A wave-1 anchor (`teams.pullBundles`) mints a `topLevelSyncedAt`
+snapshot ceiling that every downstream wave echoes back for a consistent snapshot.
+Soft-deleted rows are shipped as tombstones so the client can evict them.
+
+**Frontend** (DataWorker `SyncOrchestrator`): runs a pull → wipe → push cycle. Triggers:
+- 2-minute interval (main-thread + worker-realm safety net)
+- `visibilitychange` / `focus` / `online` events
+- post-write kicks (a staged file starts its upload immediately)
+- FCM **silent push**, which wakes the app to run a sync without showing a notification
 
 ### Cron Jobs
 
-Per-minute cron jobs using node-cron with mutex locking:
+Per-minute cron jobs using node-cron, made single-flight with a **Postgres advisory
+lock** (not an in-process flag — the lock is safe across multiple app replicas):
 
 ```typescript
-// In src/cron_jobs/services/per_minute_cron.ts
-cron.schedule('* * * * *', async () => {
-  if (isCronJobRunning) return; // Prevent concurrent runs
-  await scheduleReminders();
+// e.g. src/cron_jobs/schedule_reminders.cron.ts
+cron.schedule("* * * * *", async () => {
+  // pg_try_advisory_xact_lock inside a transaction; a second replica that
+  // fails to acquire the lock simply skips this tick.
+  await withAdvisoryLock(LOCK_KEY, async () => {
+    await scheduleReminders();
+  });
 });
 ```
 
