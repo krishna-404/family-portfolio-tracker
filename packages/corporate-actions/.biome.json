@@ -1,0 +1,12 @@
+{
+	"extends": ["../../biome.json"],
+	"files": {
+		"includes": ["**", "!dist"]
+	},
+	"formatter": {
+		"includes": ["**", "!**/node_modules", "!dist"]
+	},
+	"vcs": {
+		"useIgnoreFile": false
+	}
+}
