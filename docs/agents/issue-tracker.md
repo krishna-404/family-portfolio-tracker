@@ -6,7 +6,7 @@ This repo's issue tracker is **GitHub Issues** on `krishna-404/family-portfolio-
 
 How the [wayfinder skill](https://github.com/mattpocock/skills/blob/main/skills/in-progress/wayfinder/SKILL.md)'s concepts map onto GitHub Issues here:
 
-- **The map** is a single issue labelled `wayfinder:map`. Current map: [Wayfinder map: Ekatra — family portfolio consolidator](https://github.com/krishna-404/family-portfolio-tracker/issues/1).
+- **The map** is a single issue labelled `wayfinder:map`. Current map: [Wayfinder map: Kosh — family portfolio consolidator](https://github.com/krishna-404/family-portfolio-tracker/issues/1).
 - **Tickets** are GitHub **sub-issues** of the map (native parent/child via `sub_issue_write`). Each carries exactly one `wayfinder:<type>` label: `research`, `prototype`, `grilling`, or `task`.
 - **Claiming**: assign the issue to yourself (the dev driving the map) *before* any work. An open, unassigned ticket is unclaimed.
 - **Blocking**: the GitHub MCP toolset has no native dependency edge, so blocking uses the body convention — a final line in the ticket body:
