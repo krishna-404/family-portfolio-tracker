@@ -1,0 +1,13 @@
+particulars,posting_date,cost_center,voucher_type,debit,credit,net_balance
+Opening Balance,,,,,,0.000000
+Funds added using UPI with transaction ID UTR0001,2025-09-01,NSE-EQ - Z,Bank Receipts,0.000000,100000.000000,100000.000000
+Net settlement for Equity with settlement number: 2025100,2025-09-05,NSE-EQ - Z,Book Voucher,49999.350000,0.000000,50000.650000
+DP Charges for Sale of ALPHAX on 05/09/2025,2025-09-05,NSE-EQ - Z,Journal Entry,15.340000,0.000000,49985.310000
+AMC for Demat Account for 01-07-2025 to 30-09-2025,2025-09-12,NSE-EQ - Z,Journal Entry,88.500000,0.000000,49896.810000
+Net settlement for Equity with settlement number: 2025105,2025-09-15,NSE-EQ - Z,Book Voucher,0.000000,25000.100000,74896.910000
+"Instant Payout of 50000.0/- to DEMO BANK LTD, 0000111122 A/C number as per withdrawal request made on 2025-09-20 with reference number abc123def4",2025-09-20,NSE-EQ - Z,Bank Payments,50000.000000,0.000000,24896.910000
+Reversal of payment gateway charges,2025-09-25,NSE-EQ - Z,Journal Entry,0.000000,9.000000,24905.910000
+Funds added using NEFT,2025-10-02,NSE-EQ - Z,Bank Receipts,0.000000,10000.000000,34905.910000
+Funds transferred back as part of quarterly settlement with reference number 4927f683ab,2025-10-03,NSE-EQ - Z,Bank Payments,20000.000000,0.000000,14905.910000
+Funds auto-settled to the primary bank account,2025-12-28,NSE-EQ - Z,Bank Payments,14905.910000,0.000000,0.000000
+Closing Balance,,,,,,0.000000

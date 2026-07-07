@@ -1,0 +1,33 @@
+{
+	"name": "@connected-repo/broker-parsers",
+	"version": "1.0.0",
+	"private": true,
+	"type": "module",
+	"sideEffects": false,
+	"description": "Kosh broker statement parsers: pure functions from raw export text to normalized rows, with classification and balance validation",
+	"license": "AGPL-3.0-only",
+	"exports": {
+		"./*": {
+			"default": "./dist/*.js",
+			"import": "./dist/*.js",
+			"types": "./src/*.ts"
+		}
+	},
+	"scripts": {
+		"build": "tsc",
+		"check-types": "tsc --noEmit",
+		"clean": "rm -rf node_modules && rm -rf dist",
+		"format": "biome format . --write",
+		"lint": "biome check .",
+		"test": "vitest run",
+		"typecheck": "tsc --noEmit"
+	},
+	"devDependencies": {
+		"@connected-repo/typescript-config": "*",
+		"typescript": "^5.9.3",
+		"vitest": "^4.0.18"
+	},
+	"dependencies": {
+		"@connected-repo/zod-schemas": "*"
+	}
+}
