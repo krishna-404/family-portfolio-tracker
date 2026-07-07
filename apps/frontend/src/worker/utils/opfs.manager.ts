@@ -7,6 +7,7 @@
  * across worker/tab boundaries without shuttling bytes through
  * `postMessage`.
  */
+// biome-ignore lint/complexity/noStaticOnlyClass: established call surface (OPFSManager.x) across workers; converting to functions is tracked platform debt, out of scope for the product reset
 export class OPFSManager {
 	private static rootPromise: Promise<FileSystemDirectoryHandle> | null = null;
 
@@ -49,7 +50,6 @@ export class OPFSManager {
 			const fileHandle = await currentDir.getFileHandle(fileName);
 			return await fileHandle.getFile();
 		} catch (error) {
-			// biome-ignore lint/suspicious/noConsole: OPFS read misses are recoverable — the CDN-first path takes over
 			console.warn(`[OPFS] Failed to read file at ${path}:`, error);
 			return null;
 		}
@@ -69,7 +69,6 @@ export class OPFSManager {
 
 			await currentDir.removeEntry(fileName);
 		} catch (error) {
-			// biome-ignore lint/suspicious/noConsole: same as above
 			console.warn(`[OPFS] Failed to delete file at ${path}:`, error);
 		}
 	}
@@ -95,7 +94,6 @@ export class OPFSManager {
 
 			await currentDir.removeEntry(dirName, { recursive: true });
 		} catch (error) {
-			// biome-ignore lint/suspicious/noConsole: OPFS wipe misses are recoverable — the DB drop still fires
 			console.warn(`[OPFS] Failed to wipe directory at ${path}:`, error);
 		}
 	}

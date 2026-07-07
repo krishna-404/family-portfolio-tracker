@@ -1,6 +1,6 @@
 /**
  * Collapse volatile path segments to `:id` so Sentry groups events by
- * URL shape rather than treating every `/journal-entries/01H.../edit`
+ * URL shape rather than treating every `/accounts/01H.../edit`
  * request as a distinct issue.
  *
  * Matches ULID (26 char [0-9A-Z]), UUID (36 char with hyphens), and

@@ -1,7 +1,5 @@
 import type { TablesToSync } from "@connected-repo/zod-schemas/enums.zod";
 import type { SyncMetadata } from "@connected-repo/zod-schemas/sync.zod";
-import { journalEntriesDb } from "../../modules/journal-entries/worker/journal-entries.db";
-import { promptsDb } from "../../modules/prompts/worker/prompts.db";
 import { orpcFetch } from "../../utils/orpc.client";
 import { filesDb } from "../db/files.db";
 import { teamMembersDb } from "../db/team_members.db";
@@ -22,8 +20,7 @@ import { teamMembersDb } from "../db/team_members.db";
  * row type never has to be expressed in the shared descriptor type.
  *
  * Order matters and is the array order: it preserves referential dependencies
- * (members reference teams; journal entries reference teams and members; files
- * reference journal entries).
+ * (members reference teams; files reference their parent records).
  */
 
 /** Standard downstream pull input. */
@@ -61,28 +58,6 @@ export const DOWNSTREAM_SYNCED_ENTITIES: readonly DownstreamSyncedEntity[] = [
 				topLevelSyncedAt,
 			});
 			await teamMembersDb.bulkUpsert(res.rows);
-			return { syncMetadata: res.syncMetadata, wipeTeamIds: [] };
-		},
-	},
-	{
-		table: "prompts",
-		async pull({ cursor, topLevelSyncedAt }) {
-			const res = await orpcFetch.prompts.pullBundles({
-				syncMetadata: cursor,
-				topLevelSyncedAt,
-			});
-			await promptsDb.bulkUpsert(res.rows);
-			return { syncMetadata: res.syncMetadata, wipeTeamIds: [] };
-		},
-	},
-	{
-		table: "journalEntries",
-		async pull({ cursor, topLevelSyncedAt }) {
-			const res = await orpcFetch.journalEntries.pullBundles({
-				syncMetadata: cursor,
-				topLevelSyncedAt,
-			});
-			await journalEntriesDb.bulkUpsertFromServer(res.rows);
 			return { syncMetadata: res.syncMetadata, wipeTeamIds: [] };
 		},
 	},

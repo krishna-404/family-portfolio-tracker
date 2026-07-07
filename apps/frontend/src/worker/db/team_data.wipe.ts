@@ -19,7 +19,7 @@ import { notifySubscribers } from "./db.manager";
  * Order matters:
  *   1. Enumerate OPFS paths from the `files` rows BEFORE dropping them
  *      (once rows are gone, we can't recover the paths).
- *   2. In one Dexie transaction, delete: journal entries → files →
+ *   2. In one Dexie transaction, delete: files →
  *      team members → the team row itself → every sync_metadata cursor
  *      scoped to this team. All-or-nothing so a crash mid-wipe doesn't
  *      leave orphan rows referencing a deleted team.
@@ -44,9 +44,8 @@ export async function wipeTeamDataFromDb(teamId: string): Promise<void> {
 
 	await db.transaction(
 		"rw",
-		[db.journalEntries, db.files, db.teamMembers, db.teamsApp, db.syncMetadata],
+		[db.files, db.teamMembers, db.teamsApp, db.syncMetadata],
 		async () => {
-			await db.journalEntries.where({ teamId }).delete();
 			await db.files.where({ teamId }).delete();
 			await db.teamMembers.where({ teamId }).delete();
 			await db.teamsApp.where({ id: teamId }).delete();
@@ -58,7 +57,6 @@ export async function wipeTeamDataFromDb(teamId: string): Promise<void> {
 	// leak disk space but don't corrupt the DB.
 	await Promise.all(opfsPaths.map((p) => OPFSManager.deleteFile(p)));
 
-	notifySubscribers("journalEntries", "sync");
 	notifySubscribers("files", "sync");
 	notifySubscribers("teamMembers", "sync");
 	notifySubscribers("teamsApp", "sync");

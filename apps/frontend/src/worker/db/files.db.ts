@@ -47,7 +47,7 @@ export const filesDb = {
 
 	/**
 	 * Fetch every file in a team scoped to a single parent table (e.g.
-	 * all files under `journalEntries` for the active team). Replaces the
+	 * all files under `importBatches` for the active team). Replaces the
 	 * N+1 pattern where a list page fired one `files.getByTableId` per
 	 * visible row — those rows are already mirrored locally by the sync
 	 * pull pipeline, so this is a single indexed Dexie query with no

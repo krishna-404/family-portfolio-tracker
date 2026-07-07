@@ -75,14 +75,14 @@ export const BaseTable = createBaseTable({
 		// id and the insert fails with a duplicate-pkey error. So for BULK
 		// inserts always pass an explicit `id` per row (as `push_creates` does
 		// with client-minted ULIDs). Single `create` and `createMany` on tables
-		// without a `setOnCreate` column (e.g. `prompts` seed) are unaffected.
+		// without a `setOnCreate` column are unaffected.
 		ulidWithDefault: () => t.string(26).default(() => ulid()),
 		webhookStatusEnum: () => t.enum("webhook_status_enum", WEBHOOK_STATUS_ENUM),
 
 		/**
 		 * `updatedAt` is transported as a µs-string so the pull-delta protocol
 		 * can order rows with strict `>` / `<` semantics at microsecond precision.
-		 * Use this on every sync-able table (journal_entries, files, prompts,
+		 * Use this on every sync-able table (files,
 		 * teams_app, team_members, etc.). Auth / session / log tables that are
 		 * NOT part of the sync engine can use `timestampsAsNumbers()` instead
 		 * to keep the older ms-epoch shape.

@@ -122,7 +122,7 @@ export const PwaInstallSheet = () => {
 		{
 			id: "offline",
 			icon: <OfflineBoltRoundedIcon fontSize="small" color="primary" />,
-			text: "Works offline — journal even without a connection.",
+			text: "Installs like an app — your portfolio one tap away.",
 		},
 		{
 			id: "fullscreen",
@@ -221,16 +221,16 @@ export const PwaInstallSheet = () => {
 							<Box
 								component="img"
 								src="/apple-touch-icon.png"
-								alt="OneQ"
+								alt="Kosh"
 								sx={{ width: "100%", height: "100%", objectFit: "cover" }}
 							/>
 						</Box>
 						<Box sx={{ flexGrow: 1, minWidth: 0 }}>
 							<Typography variant="h6" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
-								Install OneQ
+								Install Kosh
 							</Typography>
 							<Typography variant="body2" color="text.secondary">
-								Scheduled Prompt & Journal
+								Family Portfolio Tracker
 							</Typography>
 						</Box>
 					</Stack>
@@ -238,7 +238,7 @@ export const PwaInstallSheet = () => {
 					{showIosGuide ? (
 						<Stack spacing={1.25}>
 							<Typography variant="body2" color="text.secondary">
-								Add OneQ to your home screen for the best experience.
+								Add Kosh to your home screen for the best experience.
 							</Typography>
 							{iosSteps.map((step) => (
 								<Stack

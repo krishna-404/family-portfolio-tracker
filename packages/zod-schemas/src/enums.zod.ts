@@ -6,14 +6,14 @@ export type ApiProductRequestStaus = z.infer<typeof apiProductRequestStatusZod>;
 
 export const API_PRODUCTS = [
   {
-    apiRoute: "journal-entries",
-    name: "Save Journal Entry",
-    sku: "journal_entry_create",
+    apiRoute: "portfolio",
+    name: "Portfolio Read",
+    sku: "portfolio_read",
     unitSize: 100,
     validityDays: 30,
   }
 ]as const;
-export const apiProductSkuEnum = API_PRODUCTS.map(product => product.sku) as ["journal_entry_create"];
+export const apiProductSkuEnum = API_PRODUCTS.map(product => product.sku) as ["portfolio_read"];
 export const apiProductSkuZod = z.enum(apiProductSkuEnum);
 export type ApiProductSku = z.infer<typeof apiProductSkuZod>;
 
@@ -21,7 +21,7 @@ export const API_REQUEST_METHOD_ENUM = ["GET", "POST", "PUT", "DELETE"] as const
 export const apiRequestMethodZod = z.enum(API_REQUEST_METHOD_ENUM);
 export type ApiRequestMethod = z.infer<typeof apiRequestMethodZod>;
 
-export const FILE_TABLE_NAME_ENUM = ["journalEntries"] as const;
+export const FILE_TABLE_NAME_ENUM = ["importBatches"] as const;
 export const fileTableNameZod = z.enum(FILE_TABLE_NAME_ENUM);
 export type FileTableName = z.infer<typeof fileTableNameZod>;
 
@@ -52,8 +52,6 @@ export type FeatureFlagScope = z.infer<typeof featureFlagScopeZod>;
 export const TABLES_TO_SYNC_ENUM = [
 	"teamsApp",
 	"teamMembers",
-	"prompts",
-	"journalEntries",
 	"files",
 ] as const;
 export const tablesToSyncZod = z.enum(TABLES_TO_SYNC_ENUM);

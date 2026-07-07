@@ -28,7 +28,7 @@ function hasBadgeApi(nav: Navigator): nav is Navigator & Required<BadgeNavigator
 
 export const AppBadgeSync = () => {
 	const snap = useSyncStatus();
-	const pending = snap.pendingEntries + snap.pendingFiles;
+	const pending = snap.pendingFiles;
 	const lastSet = useRef<number | null>(null);
 
 	useEffect(() => {

@@ -68,8 +68,7 @@ export const LoginPage = () => {
 					email,
 					image: dummyUser.image ?? undefined,
 					password,
-					callbackURL,
-					journalReminderTimes: []
+					callbackURL
 				}, {
 					throw: true
 				});
@@ -151,7 +150,7 @@ export const LoginPage = () => {
 											fontSize: { xs: "1.1rem", sm: "1.25rem" },
 										}}
 									>
-										Scheduled Prompt & Journal
+										Your family's wealth, in one place
 									</Typography>
 									<Typography
 										variant="body1"
@@ -163,7 +162,7 @@ export const LoginPage = () => {
 											mx: "auto",
 										}}
 									>
-										A simple way to journal and reflect on your day with timely, thought-provoking prompts
+										Track every family broker account together — true fund-flow returns, benchmarked against the index
 									</Typography>
 								</Box>
 

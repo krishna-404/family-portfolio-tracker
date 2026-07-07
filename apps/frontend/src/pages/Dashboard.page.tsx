@@ -1,6 +1,5 @@
 import { Avatar } from "@connected-repo/ui-mui/data-display/Avatar";
 import { Typography } from "@connected-repo/ui-mui/data-display/Typography";
-import { Alert } from "@connected-repo/ui-mui/feedback/Alert";
 import { Fade } from "@connected-repo/ui-mui/feedback/Fade";
 import { Button } from "@connected-repo/ui-mui/form/Button";
 import { Box } from "@connected-repo/ui-mui/layout/Box";
@@ -10,60 +9,21 @@ import { Stack } from "@connected-repo/ui-mui/layout/Stack";
 import { NotificationBanner } from "@frontend/components/notifications/NotificationBanner";
 import { useSessionInfo } from "@frontend/contexts/UserContext";
 import { useActiveTeamId, useWorkspace } from "@frontend/contexts/WorkspaceContext";
-import { orpc } from "@frontend/utils/orpc.tanstack.client";
+import AccountBalanceIcon from "@mui/icons-material/AccountBalance";
 import BusinessIcon from "@mui/icons-material/Business";
 import PersonIcon from "@mui/icons-material/Person";
-import { useQuery } from "@tanstack/react-query";
-import { useEffect } from "react";
 import { useNavigate } from "react-router";
 
-// Fires on the FIRST Dashboard mount within a single JS runtime. A full
-// page load (login callback via `window.location.href`, cold tab open,
-// hard refresh) resets this so the empty-entries redirect can run again;
-// SPA navigation preserves it, so clicking the Dashboard link within a
-// running session renders the dashboard normally regardless of entry count.
-let firstRunRedirectChecked = false;
-
+// Placeholder shell for the Kosh portfolio dashboard. The real thing —
+// account/group selector, date range, metric tiles (XIRR/TWR/Sharpe),
+// and the shadow-portfolio benchmark chart — lands in roadmap M3
+// (docs/kosh/05-roadmap.md). Until then this page anchors navigation
+// and the family (team) workspace context.
 const DashboardPage = () => {
 	const navigate = useNavigate();
-	// Get user data from session context (provided by AppLayout)
 	const { user } = useSessionInfo();
 	const { activeWorkspace } = useWorkspace();
 	const teamId = useActiveTeamId();
-
-	// Pull the live count of entries from the backend.
-	const { data: entries, isLoading: entriesLoading } = useQuery({
-		...orpc.journalEntries.getAll.queryOptions(),
-		enabled: !!teamId,
-	});
-	const entryCount = entries?.length ?? 0;
-
-	// First-run redirect: only on cold app open / post-login callback.
-	// Manual /dashboard navigation within a running SPA session does NOT
-	// redirect — `firstRunRedirectChecked` short-circuits it.
-	useEffect(() => {
-		if (firstRunRedirectChecked) return;
-		if (!teamId) return;
-		if (entriesLoading) return;
-		if (!entries) return;
-
-		firstRunRedirectChecked = true;
-		if (entries.length === 0) {
-			navigate("/journal-entries/new", { replace: true });
-		}
-	}, [teamId, entriesLoading, entries, navigate]);
-
-	// Avoid a one-frame flash of the empty dashboard on the render that
-	// will trigger the first-run redirect. Once the check has run, always
-	// render the dashboard — even when entries are empty.
-	if (
-		!firstRunRedirectChecked &&
-		!entriesLoading &&
-		entries &&
-		entries.length === 0
-	) {
-		return null;
-	}
 
 	return (
 		<Box
@@ -116,122 +76,94 @@ const DashboardPage = () => {
 							</Stack>
 						</Card>
 
-						{/* Workspace Status */}
-						<Card sx={{ p: 3, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
-							<Stack direction="row" spacing={2} alignItems="center" justifyContent="space-between">
-								<Stack direction="row" spacing={2} alignItems="center">
-									<Box 
-										sx={{ 
-											p: 1.5, 
-											borderRadius: 2, 
-											bgcolor: activeWorkspace.type === 'team' ? 'primary.main' : 'secondary.main',
-											color: 'white',
-											display: 'flex'
+						{/* Family workspace status */}
+						<Card sx={{ p: 3, borderRadius: 2, border: "1px solid", borderColor: "divider" }}>
+							<Stack direction="row" spacing={2} alignItems="center">
+								<Box
+									sx={{
+										p: 1.5,
+										borderRadius: 2,
+										bgcolor: activeWorkspace.type === "team" ? "primary.main" : "secondary.main",
+										color: "white",
+										display: "flex",
+									}}
+								>
+									{activeWorkspace.type === "team" ? <BusinessIcon /> : <PersonIcon />}
+								</Box>
+								<Box>
+									<Typography
+										variant="subtitle2"
+										color="text.secondary"
+										sx={{
+											textTransform: "uppercase",
+											letterSpacing: "0.05em",
+											fontSize: "0.7rem",
+											fontWeight: 700,
 										}}
 									>
-										{activeWorkspace.type === 'team' ? <BusinessIcon /> : <PersonIcon />}
-									</Box>
-									<Box>
-										<Typography variant="subtitle2" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.7rem', fontWeight: 700 }}>
-											Active Workspace
-										</Typography>
-										<Typography variant="h6" fontWeight={600}>
-											{activeWorkspace.name}
-										</Typography>
-									</Box>
-								</Stack>
-								<Box sx={{ textAlign: 'right' }}>
-									<Typography variant="h4" fontWeight={700} color="primary.main">
-										{entryCount}
+										Active Family Workspace
 									</Typography>
-									<Typography variant="caption" color="text.secondary" fontWeight={600}>
-										Total Entries
+									<Typography variant="h6" fontWeight={600}>
+										{activeWorkspace.name}
 									</Typography>
 								</Box>
 							</Stack>
 						</Card>
 
-						{/* Success Message */}
-						<Fade in timeout={600}>
-							<Alert
-								severity="success"
-								sx={{
-									borderRadius: 2,
-									boxShadow: 1,
-								}}
-							>
-								<Typography variant="body1" fontWeight={500}>
-									Your account is now active!
-								</Typography>
-								<Typography variant="body2" color="text.secondary">
-									You can now access all features of the application.
-								</Typography>
-							</Alert>
-						</Fade>
+						{/* Portfolio placeholder */}
+						<Card
+							sx={{
+								p: { xs: 4, md: 6 },
+								borderRadius: 2,
+								border: "1px dashed",
+								borderColor: "divider",
+								textAlign: "center",
+							}}
+						>
+							<AccountBalanceIcon sx={{ fontSize: 48, color: "primary.main", mb: 2 }} />
+							<Typography variant="h5" fontWeight={600} gutterBottom>
+								Your family portfolio lives here soon
+							</Typography>
+							<Typography variant="body1" color="text.secondary" sx={{ maxWidth: 520, mx: "auto" }}>
+								Connect your family's broker accounts by uploading statements, and Kosh will show
+								true fund-flow returns — XIRR, TWR, Sharpe — for any member or group, benchmarked
+								against the index and gold.
+							</Typography>
+						</Card>
 
 						{/* Quick Actions */}
 						<Stack spacing={2}>
 							<Typography variant="h5" fontWeight={600}>
 								Quick Actions
 							</Typography>
-							<Stack
-								direction={{ xs: "column", md: "row" }}
-								spacing={2}
+							<Card
+								sx={{
+									p: 3,
+									maxWidth: 420,
+									cursor: "pointer",
+									transition: "all 0.2s ease-in-out",
+									border: "1px solid",
+									borderColor: "divider",
+									"&:hover": {
+										borderColor: "primary.main",
+										transform: "translateY(-4px)",
+										boxShadow: 4,
+									},
+								}}
+								onClick={() => navigate(teamId ? `/teams/${teamId}/settings` : "/profile")}
 							>
-								<Card
-									sx={{
-										p: 3,
-										flex: 1,
-										cursor: "pointer",
-										transition: "all 0.2s ease-in-out",
-										border: "1px solid",
-										borderColor: "divider",
-										"&:hover": {
-											borderColor: "primary.main",
-											transform: "translateY(-4px)",
-											boxShadow: 4,
-										},
-									}}
-									onClick={() => navigate(teamId ? `/teams/${teamId}/settings` : "/profile")}
-								>
-									<Typography variant="h6" gutterBottom fontWeight={600}>
-										{teamId ? "Team Settings" : "View Profile"}
-									</Typography>
-									<Typography variant="body2" color="text.secondary" mb={2}>
-										{teamId ? "Manage team members and permissions" : "Manage your account settings and preferences"}
-									</Typography>
-									<Button variant="outlined" size="small">
-										{teamId ? "Manage Team" : "Go to Profile"}
-									</Button>
-								</Card>
-
-								<Card
-									sx={{
-										p: 3,
-										flex: 1,
-										cursor: "pointer",
-										transition: "all 0.2s ease-in-out",
-										border: "1px solid",
-										borderColor: "divider",
-										"&:hover": {
-											borderColor: "primary.main",
-											transform: "translateY(-4px)",
-											boxShadow: 4,
-										},
-									}}
-									onClick={() => navigate("/journal-entries")}
-								>
-									<Typography variant="h6" gutterBottom fontWeight={600}>
-										Journal Entries
-									</Typography>
-									<Typography variant="body2" color="text.secondary" mb={2}>
-										View and manage your {teamId ? "team's" : "personal"} entries
-									</Typography>
-									<Button variant="outlined" size="small">
-										Manage Entries
-									</Button>
-								</Card>
-							</Stack>
+								<Typography variant="h6" gutterBottom fontWeight={600}>
+									{teamId ? "Family Settings" : "View Profile"}
+								</Typography>
+								<Typography variant="body2" color="text.secondary" mb={2}>
+									{teamId
+										? "Manage family members and the fund manager's access"
+										: "Manage your account settings and preferences"}
+								</Typography>
+								<Button variant="outlined" size="small">
+									{teamId ? "Manage Family" : "Go to Profile"}
+								</Button>
+							</Card>
 						</Stack>
 					</Stack>
 				</Fade>
