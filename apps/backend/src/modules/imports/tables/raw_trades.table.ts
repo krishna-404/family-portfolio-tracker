@@ -38,15 +38,20 @@ export class RawTradeTable extends BaseTable {
 			charges: t.json<Record<string, unknown>>().nullable(),
 			// The full original row, verbatim, for audit.
 			rawRow: t.json<Record<string, unknown>>(),
+			// False once this row's batch is retracted (rows are never deleted).
+			// The dedupe unique index below is scoped to live rows so the same
+			// trade id can be re-imported after a retraction. See migration 0010.
+			isLive: t.boolean().default(true),
 
 			...t.timestampsAsNumbers(),
 		}),
 		(t) => [
-			// Dedupe key where the broker supplies a trade id (spec §2); rows
-			// without one fall back to a content hash at the validation gate.
+			// Dedupe key where the broker supplies a trade id (spec §2), among
+			// LIVE rows only; rows without one fall back to a content hash at
+			// the validation gate.
 			t.unique(["accountId", "brokerTradeId"], {
 				name: "raw_trades_account_id_broker_trade_id_idx",
-				where: "broker_trade_id IS NOT NULL",
+				where: "broker_trade_id IS NOT NULL AND is_live",
 			}),
 			t.index(["batchId"]),
 			t.index(["accountId", "tradeDate"]),
