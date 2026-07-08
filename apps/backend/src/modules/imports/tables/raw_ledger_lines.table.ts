@@ -31,10 +31,17 @@ export class RawLedgerLineTable extends BaseTable {
 			brokerVoucherId: t.string().nullable(),
 			// The full original row, verbatim, for audit.
 			rawRow: t.json<Record<string, unknown>>(),
+			// False once this row's batch is retracted (rows are never deleted);
+			// keeps retracted lines out of dedupe. See migration 0010.
+			isLive: t.boolean().default(true),
 
 			...t.timestampsAsNumbers(),
 		}),
-		(t) => [t.index(["batchId"]), t.index(["accountId", "postedDate"])],
+		(t) => [
+			t.index(["batchId"]),
+			t.index(["accountId", "postedDate"]),
+			t.index(["accountId", "isLive"]),
+		],
 	);
 
 	// Default tenant scope (family = team). Bypass with `.unscope('default')`
