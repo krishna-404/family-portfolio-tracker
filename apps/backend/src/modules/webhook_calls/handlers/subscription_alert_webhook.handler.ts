@@ -5,8 +5,8 @@ import { logger } from "@backend/utils/logger.utils";
 import axios from "axios";
 import { ulid } from "ulid";
 import {
-	SsrfBlockedError,
 	assertSafeWebhookUrl,
+	SsrfBlockedError,
 } from "./ssrf_guard.utils";
 
 // Cap response body at 1 MiB — webhooks should return small ack payloads.

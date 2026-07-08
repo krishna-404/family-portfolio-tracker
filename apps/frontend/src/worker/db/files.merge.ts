@@ -10,7 +10,7 @@ export function canGenerateThumbnail(mimeType: string): boolean {
  * Merge a server-authoritative file row onto the existing local row,
  * preserving client-only fields. This is the SINGLE clobber-safe merge used by
  * BOTH the pull path (`filesDb.bulkUpsertFromServer`) and the push-echo path
- * (`mergeFilesFromServer` in the journal-entries adapter).
+ * (`mergeFilesFromServer` in the parent-record adapter).
  *
  * Pure (no DB/OPFS access) so it can be unit-tested directly.
  *

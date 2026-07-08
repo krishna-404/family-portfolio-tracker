@@ -1,6 +1,4 @@
 import type { FileSelectAll } from "@connected-repo/zod-schemas/file.zod";
-import type { JournalEntrySelectAll } from "@connected-repo/zod-schemas/journal_entry.zod";
-import type { PromptSelectAll } from "@connected-repo/zod-schemas/prompt.zod";
 import type {
 	TeamAppMemberSelectAll,
 	TeamAppSelectAll,
@@ -44,8 +42,6 @@ export const DEXIE_DB_NAME_PREFIX = "app_db_v1_";
 export const dbNameFor = (userId: string): string => `${DEXIE_DB_NAME_PREFIX}${userId}`;
 
 export class ClientDatabase extends Dexie {
-	journalEntries!: Table<WithSyncStatus<JournalEntrySelectAll>, string>;
-	prompts!: Table<PromptSelectAll, string>;
 	files!: Table<StoredFile, string>;
 	teamsApp!: Table<TeamAppSelectAll, string>;
 	teamMembers!: Table<TeamAppMemberSelectAll, string>;
@@ -57,9 +53,6 @@ export class ClientDatabase extends Dexie {
 
 		this.version(DEXIE_VERSION).stores({
 			// createdAt is the pending-vs-confirmed marker (null = pending).
-			// [teamId+updatedAt] powers the tezi-style two-cursor local ordering.
-			journalEntries: "id, teamId, createdAt, updatedAt, syncError, [teamId+updatedAt]",
-			prompts: "id, updatedAt, [updatedAt+id]",
 			files: "id, tableId, tableName, type, teamId, updatedAt, mainUploadState, thumbnailUploadState, createdAt, syncError",
 			teamsApp: "id, updatedAt",
 			teamMembers: "id, userId, teamId, updatedAt",
@@ -80,8 +73,6 @@ export class ClientDatabase extends Dexie {
 // same-origin document + worker, so a single write notifies all of them.
 
 export type AppDbTable =
-	| "journalEntries"
-	| "prompts"
 	| "files"
 	| "teamsApp"
 	| "teamMembers"
@@ -148,8 +139,6 @@ export const subscribe = (
 
 // ─── Type aliases for module DB adapters ────────────────────────────────
 
-export type StoredJournalEntry = WithSyncStatus<JournalEntrySelectAll>;
-export type StoredPrompt = PromptSelectAll;
 export type StoredTeam = TeamAppSelectAll;
 export type StoredTeamMember = TeamAppMemberSelectAll;
 

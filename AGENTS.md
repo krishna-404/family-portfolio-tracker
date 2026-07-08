@@ -18,15 +18,15 @@
 ---
 
 ## Layer 2: Active Task
-- **Objective**: Improve PWA Installation and Update UX.
+- **Objective**: Kosh M0 foundation reset — strip OneQ journaling, rebrand.
 - **Status**: Completed.
-- **Context**: Implemented `PwaInstallSheet` for native-like bottom sheet installation, `AppVersionLabel` for manual version checking, and enforced a persistent `PwaUpdatePrompt` when updates are deferred. Fixed dev-mode module duplication in Vite. Ready for commit.
+- **Context**: Journal-entries and prompts modules removed across backend/frontend/schemas; app rebranded to Kosh. Next: M1 ledger core + Zerodha import (docs/kosh/05-roadmap.md).
 
 ## Layer 3: Decision Records
 
 | ID | Title | Status | Description |
 |---|---|---|---|
-| [ADR-001] | Pivot to OneQ | Accepted | App returns to its ultra-minimalist journaling roots. |
+| [ADR-001] | Pivot to Kosh | Accepted | Repo repurposed as Kosh, the family portfolio tracker (see project.md and docs/kosh/). OneQ journaling removed. |
 | [ADR-002] | Snake Case Columns in Raw SQL | Accepted | Always use snake_case in raw SQL Orchid ORM migrations. |
 | [ADR-003] | Hybrid Auth (Cookies + Bearer) | Accepted | Support both web and mobile auth via Better Auth bearer plugin. |
 | [ADR-004] | Smart CSRF Exception | Accepted | Exclude Bearer-token requests from CSRF checks for mobile compatibility. |

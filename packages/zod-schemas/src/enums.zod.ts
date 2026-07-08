@@ -6,14 +6,14 @@ export type ApiProductRequestStaus = z.infer<typeof apiProductRequestStatusZod>;
 
 export const API_PRODUCTS = [
   {
-    apiRoute: "journal-entries",
-    name: "Save Journal Entry",
-    sku: "journal_entry_create",
+    apiRoute: "portfolio",
+    name: "Portfolio Read",
+    sku: "portfolio_read",
     unitSize: 100,
     validityDays: 30,
   }
 ]as const;
-export const apiProductSkuEnum = API_PRODUCTS.map(product => product.sku) as ["journal_entry_create"];
+export const apiProductSkuEnum = API_PRODUCTS.map(product => product.sku) as ["portfolio_read"];
 export const apiProductSkuZod = z.enum(apiProductSkuEnum);
 export type ApiProductSku = z.infer<typeof apiProductSkuZod>;
 
@@ -21,7 +21,7 @@ export const API_REQUEST_METHOD_ENUM = ["GET", "POST", "PUT", "DELETE"] as const
 export const apiRequestMethodZod = z.enum(API_REQUEST_METHOD_ENUM);
 export type ApiRequestMethod = z.infer<typeof apiRequestMethodZod>;
 
-export const FILE_TABLE_NAME_ENUM = ["journalEntries"] as const;
+export const FILE_TABLE_NAME_ENUM = ["importBatches"] as const;
 export const fileTableNameZod = z.enum(FILE_TABLE_NAME_ENUM);
 export type FileTableName = z.infer<typeof fileTableNameZod>;
 
@@ -52,8 +52,6 @@ export type FeatureFlagScope = z.infer<typeof featureFlagScopeZod>;
 export const TABLES_TO_SYNC_ENUM = [
 	"teamsApp",
 	"teamMembers",
-	"prompts",
-	"journalEntries",
 	"files",
 ] as const;
 export const tablesToSyncZod = z.enum(TABLES_TO_SYNC_ENUM);
@@ -90,3 +88,115 @@ export const deviceDeactivationReasonZod = z.enum(
 export type DeviceDeactivationReason = z.infer<
 	typeof deviceDeactivationReasonZod
 >;
+
+// ─── Kosh (family portfolio tracker) enums ──────────────────────────────
+
+export const BROKER_ENUM = ["zerodha", "dhan", "groww", "manual"] as const;
+export const brokerZod = z.enum(BROKER_ENUM);
+export type Broker = z.infer<typeof brokerZod>;
+
+export const EXCHANGE_ENUM = ["NSE", "BSE", "other"] as const;
+export const exchangeZod = z.enum(EXCHANGE_ENUM);
+export type Exchange = z.infer<typeof exchangeZod>;
+
+export const TRADE_SIDE_ENUM = ["buy", "sell"] as const;
+export const tradeSideZod = z.enum(TRADE_SIDE_ENUM);
+export type TradeSide = z.infer<typeof tradeSideZod>;
+
+// Authoritative charge taxonomy, from Zerodha P&L statement account heads
+// (docs/research/broker-exports.md §4). Extend as other brokers surface
+// new heads — never lump into "other" when the statement names the charge.
+export const CHARGE_TYPE_ENUM = [
+	"brokerage",
+	"stt",
+	"exchange_txn",
+	"gst",
+	"stamp_duty",
+	"sebi_fee",
+	"ipft",
+	"clearing",
+	"dp_charge",
+	"amc",
+	"other",
+] as const;
+export const chargeTypeZod = z.enum(CHARGE_TYPE_ENUM);
+export type ChargeType = z.infer<typeof chargeTypeZod>;
+
+// The ground-truth table's classification. ONLY external_deposit and
+// external_withdrawal enter money-weighted return math; every other value
+// must be explicitly internal (see docs/kosh/03-metrics-spec.md §1 —
+// finance-math refuses to compute over unmapped classifications).
+export const CASH_FLOW_CLASSIFICATION_ENUM = [
+	"external_deposit",
+	"external_withdrawal",
+	"internal_transfer",
+	"dividend_receipt",
+	"fee_external",
+	"trade_settlement",
+	"charge",
+	"interest",
+	"other_internal",
+] as const;
+export const cashFlowClassificationZod = z.enum(CASH_FLOW_CLASSIFICATION_ENUM);
+export type CashFlowClassification = z.infer<typeof cashFlowClassificationZod>;
+
+export const IMPORT_BATCH_KIND_ENUM = [
+	"tradebook",
+	"ledger",
+	"holdings",
+	"contract_note",
+	"cas",
+	"manual_entry",
+] as const;
+export const importBatchKindZod = z.enum(IMPORT_BATCH_KIND_ENUM);
+export type ImportBatchKind = z.infer<typeof importBatchKindZod>;
+
+export const IMPORT_BATCH_STATUS_ENUM = [
+	"parsing",
+	"validating",
+	"preview",
+	"applied",
+	"rejected",
+	"retracted",
+] as const;
+export const importBatchStatusZod = z.enum(IMPORT_BATCH_STATUS_ENUM);
+export type ImportBatchStatus = z.infer<typeof importBatchStatusZod>;
+
+export const EVENT_KIND_ENUM = [
+	"trade_recognized",
+	"cash_flow_classified",
+	"corporate_action_applied",
+	"dividend_expected",
+	"dividend_receipt_confirmed",
+	"fee_schedule_set",
+	"fee_charged",
+	"user_resolution",
+	"retraction",
+] as const;
+export const eventKindZod = z.enum(EVENT_KIND_ENUM);
+export type EventKind = z.infer<typeof eventKindZod>;
+
+export const INSTRUMENT_KIND_ENUM = [
+	"equity",
+	"etf",
+	"mf",
+	"bond",
+	"sgb",
+	"reit_invit",
+	"crypto",
+	"fx_pair",
+	"index",
+	"commodity",
+] as const;
+export const instrumentKindZod = z.enum(INSTRUMENT_KIND_ENUM);
+export type InstrumentKind = z.infer<typeof instrumentKindZod>;
+
+export const INSTRUMENT_ALIAS_KIND_ENUM = [
+	"nse_symbol",
+	"bse_code",
+	"broker_symbol",
+	"name",
+	"old_isin",
+] as const;
+export const instrumentAliasKindZod = z.enum(INSTRUMENT_ALIAS_KIND_ENUM);
+export type InstrumentAliasKind = z.infer<typeof instrumentAliasKindZod>;

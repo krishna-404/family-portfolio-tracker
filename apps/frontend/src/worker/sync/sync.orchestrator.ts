@@ -1,5 +1,4 @@
 import type { TeamAppSelectAll } from "@connected-repo/zod-schemas/team_app.zod";
-import { journalEntriesDb } from "../../modules/journal-entries/worker/journal-entries.db";
 import {
 	ACTIVE_TEAM_WIPED_CHANNEL,
 	type ActiveTeamWipedMessage,
@@ -13,13 +12,12 @@ import { wipeTeamDataFromDb } from "../db/team_data.wipe";
 import { teamsAppDb } from "../db/teams_app.db";
 import { setActiveTeamId as _setActiveTeamId, getActiveTeamId } from "./active_team";
 import { fileUploadWorker } from "./file_upload.worker";
-import { pendingEditLockRegistry } from "./pending-edit-lock.registry";
 import { teamsToWipeFromReconciliation } from "./membership_reconciliation";
-import { DOWNSTREAM_SYNCED_ENTITIES } from "./synced_entities.registry";
 import {
 	SYNC_ENGINE_STATE_CHANNEL,
 	type SyncEngineStateMessage,
 } from "./sync-engine-state.channel";
+import { DOWNSTREAM_SYNCED_ENTITIES } from "./synced_entities.registry";
 
 // Producer-side channel for the "your active team is gone" signal.
 // Guarded because unit-test environments may lack `BroadcastChannel`.
@@ -40,7 +38,6 @@ const broadcastRunning = (isRunning: boolean): void => {
 	try {
 		syncEngineStateChannel?.postMessage(msg);
 	} catch (err) {
-		// biome-ignore lint/suspicious/noConsole: broadcast failures should surface in devtools
 		console.warn("[SyncOrchestrator] failed to broadcast isRunning", err);
 	}
 };
@@ -108,10 +105,6 @@ export interface SyncOrchestratorApi {
  *     - After a file upload completes — kicks pushCdnUpdates so the
  *       fresh URL is atomic with the upload.
  *
- * External `journalEntries` writes are handled by `createOnlineFirst`
- * itself (online RPC direct or savedOffline queued). They do NOT
- * trigger `drainLocalChanges` — that would race the in-flight direct
- * create RPC and double-send the row.
  */
 // Coalesce trigger-heavy scenarios (a form submit fires several writes
 // back to back; visibility/focus events pile on) into a single cycle
@@ -166,13 +159,11 @@ class SyncOrchestrator implements SyncOrchestratorApi {
 		try {
 			const repaired = await filesDb.recoverStrandedThumbnails();
 			if (repaired > 0) {
-				// biome-ignore lint/suspicious/noConsole: legitimate one-shot recovery signal
 				console.info(
 					`[SyncOrchestrator] reset ${repaired} stranded thumbnail(s) back to pending`,
 				);
 			}
 		} catch (err) {
-			// biome-ignore lint/suspicious/noConsole: recovery failure shouldn't block init
 			console.warn("[SyncOrchestrator] thumbnail recovery failed", err);
 		}
 
@@ -185,10 +176,7 @@ class SyncOrchestrator implements SyncOrchestratorApi {
 		// Subscribe fan-out from any local write (worker realm and
 		// broadcast from main). We react only to `files` external
 		// writes — those need the upload worker + pushCdnUpdates
-		// kicked immediately. `journalEntries` writes are handled by
-		// `createOnlineFirst` on the main thread (direct online RPC
-		// or savedOffline queue); reacting here would race the
-		// in-flight direct create RPC.
+		// kicked immediately.
 		//
 		// Sync-tagged writes (`source === "sync"`) are our own pipeline
 		// echoing back — skip to avoid a self-trigger loop. But the
@@ -203,7 +191,7 @@ class SyncOrchestrator implements SyncOrchestratorApi {
 		});
 
 		// Online reconnect — send anything that queued up while offline
-		// (pending journal-entry creates, staged file blobs, CDN URLs).
+		// (staged file blobs, CDN URLs).
 		// This is the event that makes the reconnect story work without
 		// waiting for the next 2-minute pull tick.
 		self.addEventListener("online", () => {
@@ -311,7 +299,6 @@ class SyncOrchestrator implements SyncOrchestratorApi {
 			await syncMetadataDb.saveCycleState({
 				lastError: err instanceof Error ? err.message : String(err),
 			});
-			// biome-ignore lint/suspicious/noConsole: sync failures should surface in devtools
 			console.warn("[SyncOrchestrator] cycle failed", err);
 		} finally {
 			this.isProcessing = false;
@@ -353,9 +340,8 @@ class SyncOrchestrator implements SyncOrchestratorApi {
 
 		try {
 			void fileUploadWorker.run();
-			await this.runPushPipeline(teamId);
+			await this.runPushPipeline();
 		} catch (err) {
-			// biome-ignore lint/suspicious/noConsole: surface push failures
 			console.warn("[SyncOrchestrator] drainLocalChanges failed", err);
 		} finally {
 			this.isProcessing = false;
@@ -387,7 +373,6 @@ class SyncOrchestrator implements SyncOrchestratorApi {
 		// the cycle actually starting.
 		const currentTeamAtStart = getActiveTeamId();
 		if (currentTeamAtStart !== teamId) {
-			// biome-ignore lint/suspicious/noConsole: cycle-start mismatch is a legitimate diagnostic
 			console.warn(
 				`[SyncOrchestrator] active team changed before cycle start (expected=${teamId}, got=${currentTeamAtStart}); aborting`,
 			);
@@ -430,7 +415,7 @@ class SyncOrchestrator implements SyncOrchestratorApi {
 		// just booted from.
 		await this.runPullPipeline(teamId, topLevelSyncedAt, teamsToWipe);
 		await this.processTeamWipes(teamId, teamsToWipe);
-		await this.runPushPipeline(teamId);
+		await this.runPushPipeline();
 	}
 
 	/**
@@ -457,7 +442,6 @@ class SyncOrchestrator implements SyncOrchestratorApi {
 			);
 			for (const id of wipe) teamsToWipe.add(id);
 		} catch (err) {
-			// biome-ignore lint/suspicious/noConsole: reconciliation failures shouldn't kill the cycle
 			console.warn("[SyncOrchestrator] membership reconciliation failed", err);
 		}
 	}
@@ -484,7 +468,6 @@ class SyncOrchestrator implements SyncOrchestratorApi {
 				await wipeTeamDataFromDb(wipedTeamId);
 				if (wipedTeamId === activeTeamId) activeTeamWiped = true;
 			} catch (err) {
-				// biome-ignore lint/suspicious/noConsole: same rationale as other pull failures
 				console.warn(`[SyncOrchestrator] wipe for team ${wipedTeamId} failed`, err);
 			}
 		}
@@ -500,7 +483,6 @@ class SyncOrchestrator implements SyncOrchestratorApi {
 			try {
 				activeTeamWipedChannel?.postMessage(msg);
 			} catch (err) {
-				// biome-ignore lint/suspicious/noConsole: broadcast failures should surface in devtools
 				console.warn("[SyncOrchestrator] failed to broadcast active-team-wiped", err);
 			}
 		}
@@ -544,7 +526,6 @@ class SyncOrchestrator implements SyncOrchestratorApi {
 				for (const id of wipeTeamIds) teamsToWipe.add(id);
 				await syncMetadataDb.saveCursor(entity.table, teamId, syncMetadata);
 			} catch (err) {
-				// biome-ignore lint/suspicious/noConsole: table-level failures shouldn't kill the whole cycle
 				console.warn(`[SyncOrchestrator] pull ${entity.table} failed`, err);
 			}
 		}
@@ -554,8 +535,8 @@ class SyncOrchestrator implements SyncOrchestratorApi {
 	 * Every `teams` row with a non-null `deletedAt` is a tombstone —
 	 * server-side, the team was soft-deleted. The client has been
 	 * `bulkUpsert`ing the tombstone into `teamsApp`; we now flag it for
-	 * wipe so the rest of its local footprint (members, journal entries,
-	 * files, OPFS blobs, sync cursors) goes with it.
+	 * wipe so the rest of its local footprint (members, files, OPFS
+	 * blobs, sync cursors) goes with it.
 	 */
 	private collectTeamTombstones(
 		rows: TeamAppSelectAll[],
@@ -573,88 +554,11 @@ class SyncOrchestrator implements SyncOrchestratorApi {
 
 	// ─── Push pipeline ─────────────────────────────────────────────────
 
-	private async runPushPipeline(teamId: string): Promise<void> {
-		try {
-			await this.pushJournalEntryCreates(teamId);
-		} catch (err) {
-			// biome-ignore lint/suspicious/noConsole: same rationale as pull failures
-			console.warn("[SyncOrchestrator] pushJournalEntryCreates failed", err);
-		}
+	private async runPushPipeline(): Promise<void> {
 		try {
 			await this.pushFileCdnUpdates();
 		} catch (err) {
-			// biome-ignore lint/suspicious/noConsole: intentional — surface push failure so devs know CDN upgrade path stalled
 			console.warn("[SyncOrchestrator] pushFileCdnUpdates failed", err);
-		}
-	}
-
-	private async pushJournalEntryCreates(teamId: string): Promise<void> {
-		const allPending = await journalEntriesDb.getPending(teamId);
-		// Skip entries the user is actively editing — pushing mid-edit
-		// would race the keystrokes and echo back a stale server row.
-		const pending = pendingEditLockRegistry.filterUnlocked(
-			"journalEntries",
-			allPending,
-		);
-		if (pending.length === 0) return;
-
-		// Bundle each pending entry with its nested files. Files are the
-		// LOCAL rows attached to this journal entry.
-		// `teamId` on the parent is NOT sent — the server derives it from
-		// `ctx.activeTeamId` so a client can't relocate an entry to another
-		// tenant. The push route is already gated by `activeTeamId`, so this
-		// is the correct authority.
-		const creates = await Promise.all(
-			pending.map(async (entry) => {
-				const localFiles = await filesDb.getAllForParent("journalEntries", entry.id);
-				return {
-					id: entry.id,
-					content: entry.content,
-					prompt: entry.prompt,
-					promptId: entry.promptId,
-					deletedAt: entry.deletedAt,
-					files: localFiles.map((f) => ({
-						id: f.id,
-						tableName: f.tableName,
-						tableId: f.tableId,
-						type: f.type,
-						fileName: f.fileName,
-						mimeType: f.mimeType,
-						teamId: f.teamId,
-						deletedAt: f.deletedAt,
-						isMainFileLost: f.isMainFileLost,
-						// cdnUrl / thumbnailCdnUrl are patched later via pushCdnUpdates.
-						cdnUrl: null,
-						thumbnailCdnUrl: null,
-					})),
-				};
-			}),
-		);
-
-		const sentIds = creates.map((c) => c.id);
-		const res = await orpcFetch.journalEntries.pushCreates({ creates });
-
-		const ackedIds = new Set<string>();
-		for (const result of res.results) {
-			ackedIds.add(result.id);
-			if (result.ok && result.row) {
-				await journalEntriesDb.overwriteFromServer(result.row);
-			} else if (!result.ok) {
-				await journalEntriesDb.setSyncError(result.id, result.error ?? "unknown error");
-			}
-		}
-
-		// Coverage check: any id we sent but the server did not acknowledge
-		// is a silent drop — without this, the row stays pending forever
-		// and we send it again every cycle. Marking it with a syncError
-		// surfaces it in the sync-status UI so the user can retry or delete.
-		for (const id of sentIds) {
-			if (!ackedIds.has(id)) {
-				await journalEntriesDb.setSyncError(
-					id,
-					"Server did not acknowledge this push",
-				);
-			}
 		}
 	}
 

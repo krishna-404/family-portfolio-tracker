@@ -4,11 +4,21 @@ import {
 	API_PRODUCT_REQUEST_STATUS_ENUM,
 	API_REQUEST_METHOD_ENUM,
 	apiProductSkuEnum,
+	BROKER_ENUM,
+	CASH_FLOW_CLASSIFICATION_ENUM,
+	CHARGE_TYPE_ENUM,
+	EVENT_KIND_ENUM,
+	EXCHANGE_ENUM,
 	FILE_TABLE_NAME_ENUM,
 	FILE_TYPE_ENUM,
+	IMPORT_BATCH_KIND_ENUM,
+	IMPORT_BATCH_STATUS_ENUM,
+	INSTRUMENT_ALIAS_KIND_ENUM,
+	INSTRUMENT_KIND_ENUM,
 	PG_TBUS_TASK_STATUS_ENUM,
 	TEAM_MEMBER_ROLE_ENUM,
 	THEME_SETTING_ENUM,
+	TRADE_SIDE_ENUM,
 	WEBHOOK_STATUS_ENUM,
 } from "@connected-repo/zod-schemas/enums.zod";
 import { createBaseTable } from "orchid-orm";
@@ -36,6 +46,15 @@ export function parseMicrosecondsToEpochStr(input: unknown): string {
 	return (msEpoch * 1000n + BigInt(microsecondsStr)).toString();
 }
 
+/**
+ * Who authored a Kosh ledger event ('system' pipeline vs interactive 'user').
+ * Backend-local (not in @connected-repo/zod-schemas) because it is always
+ * server-stamped, never accepted as client input.
+ * TODO(kosh): move to zod-schemas if the frontend ever needs to render it.
+ */
+export const EVENT_ACTOR_ENUM = ["system", "user"] as const;
+export type EventActor = (typeof EVENT_ACTOR_ENUM)[number];
+
 export const BaseTable = createBaseTable({
 	autoForeignKeys: false,
 	nowSQL: `clock_timestamp()`,
@@ -54,7 +73,53 @@ export const BaseTable = createBaseTable({
 		quantity: () => t.decimal(11, 3),
 		amount: () => t.decimal(15, 2),
 
+		// Kosh ledger-core decimal helpers (docs/kosh/02-domain-model.md):
+		// money and quantities are ALWAYS NUMERIC — never float/real.
+		moneyAmount: () => t.decimal(20, 2),
+		quantity8: () => t.decimal(20, 8),
+		price4: () => t.decimal(20, 4),
+		rate8: () => t.decimal(20, 8),
+
 		apiProductSkuEnum: () => t.enum("api_product_enum", apiProductSkuEnum),
+		brokerEnum: () => t.enum("broker_enum", BROKER_ENUM),
+		cashFlowClassificationEnum: () =>
+			t.enum("cash_flow_classification_enum", CASH_FLOW_CLASSIFICATION_ENUM),
+		chargeTypeEnum: () => t.enum("charge_type_enum", CHARGE_TYPE_ENUM),
+		eventActorEnum: () => t.enum("event_actor_enum", EVENT_ACTOR_ENUM),
+		eventKindEnum: () => t.enum("event_kind_enum", EVENT_KIND_ENUM),
+		exchangeEnum: () => t.enum("exchange_enum", EXCHANGE_ENUM),
+		importBatchKindEnum: () =>
+			t.enum("import_batch_kind_enum", IMPORT_BATCH_KIND_ENUM),
+		importBatchStatusEnum: () =>
+			t.enum("import_batch_status_enum", IMPORT_BATCH_STATUS_ENUM),
+		instrumentAliasKindEnum: () =>
+			t.enum("instrument_alias_kind_enum", INSTRUMENT_ALIAS_KIND_ENUM),
+		instrumentKindEnum: () =>
+			t.enum("instrument_kind_enum", INSTRUMENT_KIND_ENUM),
+		tradeSideEnum: () => t.enum("trade_side_enum", TRADE_SIDE_ENUM),
+
+		/**
+		 * Tenant column for Kosh family-scoped tables (family = teams_app row;
+		 * see docs/kosh/02-domain-model.md §1). Auto-stamped from the
+		 * AsyncLocalStorage request context on insert, like
+		 * `idAndAuditTimestamps.teamId` — NOT NULL because a ledger row without
+		 * a family is meaningless. Pair with a `scopes.default` familyId filter
+		 * on each table (files.table.ts pattern).
+		 */
+		koshFamilyId: () =>
+			t
+				.string(26)
+				.foreignKey("teams_app", "id", {
+					onUpdate: "RESTRICT",
+					onDelete: "CASCADE",
+				})
+				.readOnly()
+				.setOnCreate(() => {
+					const ctx = getRequestContext();
+					if (!ctx) throw new Error("No request context — cannot set familyId");
+					return ctx.tenantTeamId;
+				}),
+
 		apiRequestMethodEnum: () =>
 			t.enum("api_request_method_enum", API_REQUEST_METHOD_ENUM),
 		apiProductRequestStatusEnum: () =>
@@ -75,14 +140,14 @@ export const BaseTable = createBaseTable({
 		// id and the insert fails with a duplicate-pkey error. So for BULK
 		// inserts always pass an explicit `id` per row (as `push_creates` does
 		// with client-minted ULIDs). Single `create` and `createMany` on tables
-		// without a `setOnCreate` column (e.g. `prompts` seed) are unaffected.
+		// without a `setOnCreate` column are unaffected.
 		ulidWithDefault: () => t.string(26).default(() => ulid()),
 		webhookStatusEnum: () => t.enum("webhook_status_enum", WEBHOOK_STATUS_ENUM),
 
 		/**
 		 * `updatedAt` is transported as a µs-string so the pull-delta protocol
 		 * can order rows with strict `>` / `<` semantics at microsecond precision.
-		 * Use this on every sync-able table (journal_entries, files, prompts,
+		 * Use this on every sync-able table (files,
 		 * teams_app, team_members, etc.). Auth / session / log tables that are
 		 * NOT part of the sync engine can use `timestampsAsNumbers()` instead
 		 * to keep the older ms-epoch shape.

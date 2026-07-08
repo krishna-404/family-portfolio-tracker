@@ -102,8 +102,8 @@ export const NotificationBanner = () => {
 			}
 		>
 			{needsInstallFirst
-				? "Add OneQ to your home screen to receive daily journal reminders — iOS Safari doesn't deliver push from a browser tab."
-				: "Get a daily nudge to log your journal — turn on notifications and pick a time from your Profile."}
+				? "Add Kosh to your home screen to receive alerts — iOS Safari doesn't deliver push from a browser tab."
+				: "Turn on notifications to hear about corporate actions and imports that need your input."}
 		</Alert>
 	);
 };

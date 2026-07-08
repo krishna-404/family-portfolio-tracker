@@ -1,9 +1,6 @@
-import { seedPrompts } from "@backend/db/seed/prompts.seed";
-
 export const seed = async () => {
 	console.info("Seeding database...");
-
-	await seedPrompts();
-
+	// Kosh has no seed data yet — reference data (instruments, price bars)
+	// arrives via ingestion jobs, not seeds.
 	console.info("Seeding completed successfully!");
 };

@@ -55,7 +55,7 @@ export async function initSyncForUser(
 ): Promise<void> {
 	// Set the main-thread header cache FIRST, synchronously, so any query
 	// that fires during the await below already carries `x-team-id`.
-	// Setting it after the awaits used to race with `journalEntries.getAll`
+	// Setting it after the awaits used to race with the first data reads
 	// on first paint → 403 "Active team id mismatch".
 	setActiveTeamIdForRequests(activeTeamAppId);
 	const proxy = await getDataProxy();

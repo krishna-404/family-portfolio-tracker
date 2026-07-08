@@ -1,0 +1,33 @@
+{
+	"name": "@connected-repo/corporate-actions",
+	"version": "1.0.0",
+	"private": true,
+	"type": "module",
+	"sideEffects": false,
+	"description": "Kosh corporate-actions kernel: purpose-string parsing, application math, adjustment factors, replay/retraction, reconciliation",
+	"license": "AGPL-3.0-only",
+	"exports": {
+		"./*": {
+			"default": "./dist/*.js",
+			"import": "./dist/*.js",
+			"types": "./src/*.ts"
+		}
+	},
+	"scripts": {
+		"build": "tsc",
+		"check-types": "tsc --noEmit",
+		"clean": "rm -rf node_modules && rm -rf dist",
+		"format": "biome format . --write",
+		"lint": "biome check .",
+		"test": "vitest run",
+		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@connected-repo/zod-schemas": "*"
+	},
+	"devDependencies": {
+		"@connected-repo/typescript-config": "*",
+		"typescript": "^5.9.3",
+		"vitest": "^4.0.18"
+	}
+}

@@ -1,6 +1,6 @@
-import { Box } from "@connected-repo/ui-mui/layout/Box";
 import { Badge } from "@connected-repo/ui-mui/data-display/Badge";
 import { Tooltip } from "@connected-repo/ui-mui/data-display/Tooltip";
+import { Box } from "@connected-repo/ui-mui/layout/Box";
 import { IconButton } from "@connected-repo/ui-mui/navigation/IconButton";
 import { getDataProxy } from "@frontend/worker/worker.proxy";
 import CloudDoneIcon from "@mui/icons-material/CloudDone";
@@ -20,8 +20,8 @@ export const SyncBubble = () => {
 	const navigate = useNavigate();
 	const snap = useSyncStatus();
 
-	const pending = snap.pendingEntries + snap.pendingFiles;
-	const errors = snap.errorEntries + snap.errorFiles;
+	const pending = snap.pendingFiles;
+	const errors = snap.errorFiles;
 
 	// Badge semantics — errors are the more urgent signal, so they win
 	// the badge slot when both are non-zero (colour also flips to red).

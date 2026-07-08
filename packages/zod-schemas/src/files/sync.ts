@@ -18,8 +18,7 @@ import {
 //
 // Everything else (fileName, mimeType, teamId, tableId, tableName, …) is
 // captured at file-pick time on the device and rides along with the
-// parent bundle's FIRST write via `journalEntries.pushCreates` /
-// `journalEntries.create`.
+// parent bundle's FIRST write.
 //
 // Per-field semantics:
 //   * cdnUrl / thumbnailCdnUrl are only written IF the server column is

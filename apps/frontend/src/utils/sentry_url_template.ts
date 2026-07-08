@@ -1,6 +1,6 @@
 /**
  * Collapse volatile path segments to `:id` so Sentry groups events by
- * URL shape rather than treating every `/journal-entries/01H.../edit`
+ * URL shape rather than treating every `/accounts/01H.../edit`
  * request as a distinct issue. Kept in sync with the backend copy at
  * apps/backend/src/utils/sentry_url_template.ts.
  */

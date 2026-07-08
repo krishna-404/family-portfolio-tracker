@@ -1,5 +1,4 @@
 import { db } from "@backend/db/db";
-import { notificationsRouter } from "@backend/modules/notifications/notifications.router";
 import { buildInboxCredentials } from "@backend/modules/notifications/services/inbox_credentials.notifications.service";
 import { reconcileUserFcmDevices } from "@backend/modules/notifications/services/reconcile_devices.notifications.service";
 import {
@@ -7,50 +6,13 @@ import {
 	revokeFcmDevice,
 } from "@backend/modules/notifications/services/register_device.notifications.service";
 import { defaultContext } from "@backend/test/setup";
-import { ORPCError } from "@orpc/contract";
-import { createRouterClient, type RouterClient } from "@orpc/server";
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 // Test env has no NOVU_SECRET_KEY (see .env.test) → novu.config exports
 // null. That means every service under test in this file skips the Novu
 // round-trip and exercises only the DB path, which is what we want to
 // verify: the split-brain risk we're guarding against is DB-vs-Novu drift,
 // and the DB half is deterministic in tests.
-
-describe("Notifications Endpoints", () => {
-	let defaultClient: RouterClient<typeof notificationsRouter>;
-	const unauthClient = createRouterClient(notificationsRouter);
-
-	beforeEach(() => {
-		if (!defaultContext) throw new Error("defaultContext not initialized");
-		defaultClient = createRouterClient(notificationsRouter, {
-			context: defaultContext,
-		});
-	});
-
-	describe("getReminderTimes", () => {
-		it("returns times stripped to HH:mm (Postgres time round-trips as HH:mm:ss)", async () => {
-			// Test fixture seeds ["08:00", "21:00"]; the router must return
-			// them in the HH:mm shape the zod contract advertises.
-			const result = await defaultClient.getReminderTimes({});
-			expect(result).toEqual(["08:00", "21:00"]);
-		});
-
-		it("rejects unauthenticated requests", async () => {
-			await expect(unauthClient.getReminderTimes({})).rejects.toThrowError(
-				ORPCError,
-			);
-		});
-	});
-
-	describe("setReminderTimes", () => {
-		it("round-trips the times array via getReminderTimes", async () => {
-			await defaultClient.setReminderTimes({ times: ["06:00", "18:30"] });
-			const result = await defaultClient.getReminderTimes({});
-			expect(result).toEqual(["06:00", "18:30"]);
-		});
-	});
-});
 
 describe("registerFcmDevice", () => {
 	it("inserts a new active row for a first-time token", async () => {

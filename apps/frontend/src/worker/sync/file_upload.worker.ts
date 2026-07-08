@@ -9,7 +9,7 @@ import { getMediaProxy } from "../worker.context";
  *
  * This is the SOLE upload path — both online-picked and offline-picked
  * files are staged into OPFS via `filesDb.upsertLocal` and drained here.
- * `CreateJournalEntryForm` and any other picker never talks to the CDN
+ * Any file picker never talks to the CDN
  * directly.
  *
  * Each file row carries its own per-layer state (main + thumbnail). The

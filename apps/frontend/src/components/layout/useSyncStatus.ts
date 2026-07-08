@@ -19,9 +19,7 @@ export interface SyncStatusSnapshot {
 	lastCompletedAt: number | null;
 	lastAttemptedAt: number | null;
 	lastError: string | null;
-	pendingEntries: number;
 	pendingFiles: number;
-	errorEntries: number;
 	errorFiles: number;
 }
 
@@ -82,16 +80,6 @@ export function useSyncStatus(): SyncStatusSnapshot {
 		return await proxy.syncMetadataDb.getCycleState();
 	});
 
-	const { data: pendingEntries } = useLocalDb(
-		"journalEntries",
-		async (proxy) => (teamId ? await proxy.journalEntriesDb.countPending(teamId) : 0),
-		[teamId],
-	);
-	const { data: errorEntries } = useLocalDb(
-		"journalEntries",
-		async (proxy) => (teamId ? await proxy.journalEntriesDb.countErrors(teamId) : 0),
-		[teamId],
-	);
 	const { data: pendingFiles } = useLocalDb(
 		"files",
 		async (proxy) => (teamId ? await proxy.filesDb.countPending(teamId) : 0),
@@ -106,8 +94,8 @@ export function useSyncStatus(): SyncStatusSnapshot {
 	const lastError = cycleState?.lastError ?? null;
 	const lastCompletedAt = cycleState?.lastCompletedAt ?? null;
 	const lastAttemptedAt = cycleState?.lastAttemptedAt ?? null;
-	const errorCount = (errorEntries ?? 0) + (errorFiles ?? 0);
-	const pendingCount = (pendingEntries ?? 0) + (pendingFiles ?? 0);
+	const errorCount = errorFiles ?? 0;
+	const pendingCount = pendingFiles ?? 0;
 
 	let status: SyncStatus;
 	if (!online) status = "offline";
@@ -125,9 +113,7 @@ export function useSyncStatus(): SyncStatusSnapshot {
 		lastCompletedAt,
 		lastAttemptedAt,
 		lastError,
-		pendingEntries: pendingEntries ?? 0,
 		pendingFiles: pendingFiles ?? 0,
-		errorEntries: errorEntries ?? 0,
 		errorFiles: errorFiles ?? 0,
 	};
 }

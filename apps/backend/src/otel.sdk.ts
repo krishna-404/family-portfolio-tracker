@@ -1,5 +1,6 @@
 // Initialize OpenTelemetry + Sentry before the HTTP server (or any instrumented module) loads.
 import { env, isDev, isProd } from "@backend/configs/env.config";
+import { normalizeUrl, normalizeUrlPath } from "@backend/utils/sentry_url_template";
 import {
 	CompositePropagator,
 	W3CBaggagePropagator,
@@ -19,7 +20,6 @@ import {
 	SentrySpanProcessor,
 } from "@sentry/opentelemetry";
 import { nodeProfilingIntegration } from "@sentry/profiling-node";
-import { normalizeUrl, normalizeUrlPath } from "@backend/utils/sentry_url_template";
 
 const sentryClient = Sentry.init({
 	dsn: env.SENTRY_DSN,

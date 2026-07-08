@@ -5,7 +5,7 @@ import type { StoredFile } from "./schema.db.types";
 
 const serverRow = (over: Partial<FileSelectAll> = {}): FileSelectAll => ({
 	id: "01JAAAAAAAAAAAAAAAAAAAAFILE",
-	tableName: "journalEntries",
+	tableName: "importBatches",
 	tableId: "01JAAAAAAAAAAAAAAAAAAAENTRY",
 	type: "attachment",
 	fileName: "photo.jpg",
